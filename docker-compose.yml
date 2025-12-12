@@ -1,0 +1,61 @@
+version: "3"
+
+services:
+  # MongoDB
+  mongo:
+    image: mongo:latest
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - ./data/mongo:/data/db
+
+  # Hadoop NameNode
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    restart: always
+    ports:
+      - "9870:9870"
+      - "9000:9000"
+    volumes:
+      - ./data/namenode:/hadoop/dfs/name
+    environment:
+      - CLUSTER_NAME=test
+      - HDFS_CONF_dfs_permissions_enabled=false
+
+  # Hadoop DataNode
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode
+    restart: always
+    volumes:
+      - ./data/datanode:/hadoop/dfs/data
+    environment:
+      - SERVICE_PRECONDITION=namenode:9870
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      - CLUSTER_NAME=test
+      - HDFS_CONF_dfs_permissions_enabled=false
+    depends_on:
+      - namenode
+
+  # Hive Server
+  # Using a simplified Hive image that acts as a server
+  hive-server:
+    image: bde2020/hive:2.3.2-postgresql-metastore
+    container_name: hive-server
+    ports:
+      - "10000:10000"
+      - "10002:10002"
+    environment:
+      - HADOOP_NAMENODE=namenode:9000
+      - HIVE_SITE_CONF_javax_jdo_option_ConnectionURL=jdbc:postgresql://hive-metastore/metastore
+    depends_on:
+      - namenode
+      - datanode
+      - hive-metastore
+
+  # Hive Metastore (Postgres)
+  hive-metastore:
+    image: bde2020/hive-metastore-postgresql:2.3.0
+    container_name: hive-metastore-db

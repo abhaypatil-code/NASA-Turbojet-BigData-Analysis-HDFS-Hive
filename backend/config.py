@@ -11,7 +11,7 @@ COLLECTION_NAME = "sensors"
 
 # HDFS Config
 # If using Docker, set USE_DOCKER = True and specify container name
-USE_DOCKER = False
+USE_DOCKER = True
 NAMENODE_CONTAINER = "namenode" # Common name for HDFS container
 HDFS_ROOT = "/bda_project"
 

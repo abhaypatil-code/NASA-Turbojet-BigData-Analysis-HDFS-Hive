@@ -39,6 +39,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+from backend.config import USE_DOCKER
+
 def check_services():
     st.sidebar.markdown("---")
     st.sidebar.subheader("System Status")
@@ -52,16 +54,33 @@ def check_services():
         st.sidebar.error(f"MongoDB: Failed")
 
     # Check Hadoop
-    if shutil.which("hadoop"):
-        st.sidebar.success("Hadoop: Detected")
+    if USE_DOCKER:
+        # Simple check if docker is available
+        if shutil.which("docker"):
+            st.sidebar.success("Hadoop: Docker Mode (Assumed)")
+        else:
+            st.sidebar.error("Hadoop: Docker Not Found")
     else:
-        st.sidebar.warning("Hadoop: Not Found (Simulated Mode)")
+        if shutil.which("hadoop"):
+            st.sidebar.success("Hadoop: Detected")
+        else:
+            st.sidebar.warning("Hadoop: Not Found (Simulated Mode)")
 
     # Check Hive
-    if shutil.which("hive"):
-        st.sidebar.success("Hive: Detected")
+    if USE_DOCKER:
+        if shutil.which("docker"):
+            st.sidebar.success("Hive: Docker Mode (Assumed)")
+        else:
+            st.sidebar.error("Hive: Docker Not Found")
     else:
-        st.sidebar.warning("Hive: Not Found")
+        if shutil.which("hive"):
+            st.sidebar.success("Hive: Detected")
+        else:
+            st.sidebar.warning("Hive: Not Found")
+
+    if not m_ok or (not USE_DOCKER and not shutil.which("hadoop")):
+         st.sidebar.markdown("---")
+         st.sidebar.info("⚠️ Services Check Failed?\n\nSee `SETUP_GUIDE.md` to install MongoDB and Hadoop (via Docker).")
 
 
 def render_home():
