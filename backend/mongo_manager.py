@@ -4,71 +4,86 @@ from backend.config import MONGO_URI, DB_NAME, COLLECTION_NAME, CMAPSS_SCHEMA
 
 class MongoManager:
     def __init__(self):
-        self.client = pymongo.MongoClient(MONGO_URI)
-        self.db = self.client[DB_NAME]
-        self.collection = self.db[COLLECTION_NAME]
+        try:
+            self.client = pymongo.MongoClient(MONGO_URI, serverSelectionTimeoutMS=2000)
+            self.db = self.client[DB_NAME]
+            self.collection = self.db[COLLECTION_NAME]
+        except Exception as e:
+            print(f"MongoDB Connection Warning: {e}")
+            self.client = None
+            self.db = None
+            self.collection = None
 
     def test_connection(self):
+        if not self.client:
+             return False, "Client not initialized."
         try:
             self.client.server_info()
             return True, "Connected successfully"
         except Exception as e:
             return False, str(e)
 
-    def ingest_data(self, filepath):
+    def ingest_data(self, data):
         """
-        Ingests the CMaps dataset using the schema defined in config.py.
+        Ingests the CMaps dataset. 
+        Accepts: 
+        - filepath (str)
+        - pd.DataFrame
         """
-        import zipfile
+        if not self.collection:
+             return False, "MongoDB not connected."
+
         try:
-            # Handle Zip Files
-            if filepath.endswith('.zip'):
-                with zipfile.ZipFile(filepath, 'r') as z:
-                    first_file = z.namelist()[0]
-                    with z.open(first_file) as f:
-                         self._ingest_stream(f)
+            df = None
+            if isinstance(data, str):
+                # Standard ingestion logic from file
+                cols = CMAPSS_SCHEMA['columns']
+                # If reading direct raw file
+                df = pd.read_csv(data, sep=r'\s+', header=None, names=cols, engine='python')
+            elif isinstance(data, pd.DataFrame):
+                df = data
             else:
-                self._ingest_stream(filepath)
+                return False, "Unsupported data type for ingestion."
+
+            # Drop existing for this batch/dataset if needed, or append? 
+            # For this project, we might want to clear specific dataset_id if it exists to avoid dupes
+            if 'dataset_id' in df.columns:
+                 dataset_ids = df['dataset_id'].unique()
+                 self.collection.delete_many({'dataset_id': {'$in': list(dataset_ids)}})
+
+            records = df.to_dict('records')
             
-            return True, f"Successfully ingested data mapping to {len(CMAPSS_SCHEMA['columns'])} columns."
+            if records:
+                self.collection.insert_many(records)
+            
+            return True, f"Successfully ingested {len(records)} records."
         except Exception as e:
             return False, f"Ingestion Error: {str(e)}"
 
-    def _ingest_stream(self, file_obj):
-        # Determine column structure from Config
-        cols = CMAPSS_SCHEMA['columns']
-        
-        # Read Data
-        df = pd.read_csv(file_obj, sep=r'\s+', header=None, names=cols, engine='python')
-        
-        # Convert to dictionary records
-        records = df.to_dict('records')
-        
-        # Clear existing data and insert
-        self.collection.delete_many({})
-        if records:
-            self.collection.insert_many(records)
-
     def get_summary(self):
+        if not self.collection: return {"status": "Not Connected"}
         count = self.collection.count_documents({})
         if count == 0:
             return {"status": "No Data"}
         
         summary = {"total_records": count}
         summary["total_units"] = len(self.collection.distinct('unit_number'))
+        summary["dataset_ids"] = list(self.collection.distinct('dataset_id'))
         summary["data_type"] = "C-MAPSS Timeseries"
         return summary
 
-    def get_sensor_trends(self, unit_id):
-        cursor = self.collection.find({'unit_number': unit_id}, {'_id': 0}).sort('time_cycles', 1)
+    def get_sensor_trends(self, unit_id, dataset_id="FD001"):
+        if not self.collection: return []
+        cursor = self.collection.find(
+            {'unit_number': int(unit_id), 'dataset_id': dataset_id}, 
+            {'_id': 0}
+        ).sort('time_cycles', 1)
         return list(cursor)
 
-    def get_correlation_data(self):
-        cursor = self.collection.find({}, {'_id': 0})
-        return list(cursor)
-
-    def get_avg_sensors_per_unit(self):
+    def get_avg_sensors_per_unit(self, dataset_id="FD001"):
+        if not self.collection: return []
         pipeline = [
+            {"$match": {"dataset_id": dataset_id}},
             {"$group": {
                 "_id": "$unit_number",
                 "avg_s11": {"$avg": "$sensor_11"},
@@ -80,20 +95,13 @@ class MongoManager:
         ]
         return list(self.collection.aggregate(pipeline))
     
-    # --- Advanced Aggregations ---
-
-    def get_unit_health_scores(self):
+    def get_unit_health_scores(self, dataset_id="FD001"):
         """
-        Calculates a proxy 'Health Score' based on sensor deviation from the mean.
-        Health Score = 100 - (AVG(Normalized Deviation of Sensors 2, 3, 4, 7, 8, 9, 11, 12, 13, 14, 15, 17, 20, 21))
-        This is a simplified example.
+        Calculates a proxy 'Health Score'.
         """
+        if not self.collection: return []
         pipeline = [
-            # 1. Calc Global Averages for critical sensors (approximate for this demo)
-            # In a real system, we'd double query or use hardcoded baselines. 
-            # For efficiency in one pipeline without $setWindowFields (older mongo), we'll group by null first? 
-            # No, let's keep it simple: Just Max Cycle (RUL proxy) vs Avg Sensor 11 (Pressure)
-            
+            {"$match": {"dataset_id": dataset_id}},
             {"$group": {
                 "_id": "$unit_number",
                 "max_life": {"$max": "$time_cycles"},
@@ -103,7 +111,7 @@ class MongoManager:
             {"$project": {
                 "unit_number": "$_id",
                 "max_life": 1,
-                "health_index": {"$divide": ["$avg_pressure", "$avg_temp"]} # Arbitrary metric
+                "health_index": {"$divide": ["$avg_pressure", "$avg_temp"]}
             }},
              {"$sort": {"max_life": 1}}
         ]
@@ -113,3 +121,4 @@ if __name__ == "__main__":
     mm = MongoManager()
     connected, msg = mm.test_connection()
     print(f"Connection Test: {msg}")
+

@@ -1,11 +1,13 @@
 import os
 import pandas as pd
 from backend.hdfs_manager import HDFSManager
+from backend.mongo_manager import MongoManager
 from backend.config import CMAPS_DIR, CMAPSS_SCHEMA
 
 class DataIngestion:
     def __init__(self):
         self.hdfs = HDFSManager()
+        self.mongo = MongoManager()
         self.processed_dir = "/bda_project/processed"
         self.hdfs.mkdir(self.processed_dir)
         self.hdfs.mkdir(f"{self.processed_dir}/train")
@@ -15,10 +17,16 @@ class DataIngestion:
     def process_and_upload(self):
         """
         Iterates over CMAPSS files, cleans them, adds dataset_id, and uploads to specific HDFS folders.
+        Also ingests into MongoDB.
         """
         files = [f for f in os.listdir(CMAPS_DIR) if f.startswith("train_") or f.startswith("test_") or f.startswith("RUL_")]
         
         status_report = []
+        
+        # Test Mongo Connection
+        conn, msg = self.mongo.test_connection()
+        if not conn:
+            status_report.append(f"WARNING: MongoDB Connection Failed: {msg}. Continuing with HDFS only.")
 
         for filename in files:
             try:
@@ -49,7 +57,17 @@ class DataIngestion:
                 
                 # Add dataset_id column
                 df['dataset_id'] = dataset_id
+                df['dataset_type'] = table_type
 
+                # 1. MongoDB Ingestion
+                if conn:
+                    success, msg = self.mongo.ingest_data(df)
+                    if success:
+                        status_report.append(f"MONGO SUCCESS: {filename} -> {msg}")
+                    else:
+                        status_report.append(f"MONGO FAIL: {filename} -> {msg}")
+
+                # 2. HDFS Ingestion
                 # Save to temporary CSV
                 temp_csv = f"temp_{filename}.csv"
                 # Use standard comma separator, no header for Hive textfile compatibility (or include header if Hive skips it)
@@ -66,9 +84,9 @@ class DataIngestion:
                     os.remove(temp_csv)
 
                 if success:
-                    status_report.append(f"SUCCESS: {filename} -> {hdfs_dest}")
+                    status_report.append(f"HDFS SUCCESS: {filename} -> {hdfs_dest}")
                 else:
-                    status_report.append(f"FAILURE: {filename} -> {msg}")
+                    status_report.append(f"HDFS FAILURE: {filename} -> {msg}")
 
             except Exception as e:
                 status_report.append(f"ERROR: {filename} -> {str(e)}")
@@ -80,3 +98,4 @@ if __name__ == "__main__":
     print("Starting Ingestion...")
     report = di.process_and_upload()
     print(report)
+

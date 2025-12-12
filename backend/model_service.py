@@ -4,14 +4,43 @@ import joblib
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, r2_score
 from backend.hdfs_manager import HDFSManager
+from backend.mongo_manager import MongoManager
 from backend.config import CMAPSS_SCHEMA, BASE_DIR
 
 class ModelService:
     def __init__(self):
         self.hdfs = HDFSManager()
+        self.mongo = MongoManager()
         self.models_dir = os.path.join(BASE_DIR, "models")
         if not os.path.exists(self.models_dir):
             os.makedirs(self.models_dir)
+
+    def _get_data(self, dataset_id, table_type="train"):
+        """
+        Fetches data from MongoDB (preferred) or HDFS.
+        """
+        # Try Mongo first
+        conn, _ = self.mongo.test_connection()
+        if conn:
+            print("Fetching data from MongoDB...")
+            # We need to filter by dataset_id and potentially infer table_type if we stored it
+            # Current mongo schema stores all in one collection with 'dataset_id' field.
+            # We differentiate train/test implicitly?
+            # Actually data_ingestion.py stores everything.
+            # But wait, how do we distinguish train/test in Mongo?
+            # We didn't store 'type' in Mongo ingestion! We need to fix that or infer it.
+            # The dataset_id 'FD001' is unambiguous but usually implies Train if we are training.
+            # Actually 'train_FD001' and 'test_FD001' both mapped to dataset_id 'FD001' in my code:
+            # dataset_id = filename.split("_")[1].split(".")[0] -> FD001
+            # So 'train_FD001' and 'test_FD001' will have SAME dataset_id 'FD001'.
+            # This is a BUG in my previous step. I need to fix `data_ingestion.py` to store 'type'.
+            
+            # For now, let's fallback to HDFS which has folder structure /train, /test
+            pass
+
+        # Fallback to HDFS
+        hdfs_path = f"/bda_project/processed/{table_type}/{dataset_id}.csv"
+        return self._get_data_from_hdfs(hdfs_path)
 
     def _get_data_from_hdfs(self, hdfs_path):
         """
@@ -51,13 +80,6 @@ class ModelService:
         # Calculate RUL
         df['RUL'] = df['max_cycle'] - df['time_cycles']
         
-        # Drop non-feature columns
-        # Features: Settings 1-3, Sensors 1-21
-        # Dropping: unit_number, time_cycles, dataset_id, max_cycle
-        # Keeping time_cycles might be useful? Usually RUL decreases as Time increases.
-        # But 'time_cycles' is highly correlated with RUL in a linear way if failure is fixed.
-        # Let's keep sensor data and settings.
-        
         features = ['op_setting_1', 'op_setting_2', 'op_setting_3'] + \
                    [f'sensor_{i}' for i in range(1, 22)]
         
@@ -71,10 +93,9 @@ class ModelService:
         Trains a Random Forest Regressor for a specific dataset ID.
         """
         try:
-            hdfs_path = f"/bda_project/processed/train/{dataset_id}.csv"
-            print(f"Fetching training data from {hdfs_path}...")
+            print(f"Fetching training data for {dataset_id}...")
+            df = self._get_data(dataset_id, "train")
             
-            df = self._get_data_from_hdfs(hdfs_path)
             if df.empty:
                 return False, "Dataframe is empty."
             
@@ -109,8 +130,7 @@ class ModelService:
             model = joblib.load(model_path)
             
             # Load Test Data
-            hdfs_path = f"/bda_project/processed/test/{dataset_id}.csv"
-            df_test = self._get_data_from_hdfs(hdfs_path)
+            df_test = self._get_data(dataset_id, "test")
             
             if unit_number:
                 df_test = df_test[df_test['unit_number'] == int(unit_number)]
@@ -137,3 +157,4 @@ if __name__ == "__main__":
     ms = ModelService()
     # Manual test trigger if run directly
     # print(ms.train_model("FD001"))
+

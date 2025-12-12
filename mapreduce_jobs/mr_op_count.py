@@ -18,7 +18,12 @@ class MROpCount(MRJob):
 
     def mapper(self, _, line):
         try:
-            parts = line.split()
+            line = line.strip()
+            if ',' in line:
+                parts = line.split(',')
+            else:
+                parts = line.split()
+            
             if len(parts) > 0:
                 unit_id = parts[0]
                 yield f"Unit_{unit_id}", 1
