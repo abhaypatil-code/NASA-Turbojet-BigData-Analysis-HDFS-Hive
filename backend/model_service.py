@@ -22,21 +22,29 @@ class ModelService:
         # Try Mongo first
         conn, _ = self.mongo.test_connection()
         if conn:
-            print("Fetching data from MongoDB...")
-            # We need to filter by dataset_id and potentially infer table_type if we stored it
-            # Current mongo schema stores all in one collection with 'dataset_id' field.
-            # We differentiate train/test implicitly?
-            # Actually data_ingestion.py stores everything.
-            # But wait, how do we distinguish train/test in Mongo?
-            # We didn't store 'type' in Mongo ingestion! We need to fix that or infer it.
-            # The dataset_id 'FD001' is unambiguous but usually implies Train if we are training.
-            # Actually 'train_FD001' and 'test_FD001' both mapped to dataset_id 'FD001' in my code:
-            # dataset_id = filename.split("_")[1].split(".")[0] -> FD001
-            # So 'train_FD001' and 'test_FD001' will have SAME dataset_id 'FD001'.
-            # This is a BUG in my previous step. I need to fix `data_ingestion.py` to store 'type'.
-            
-            # For now, let's fallback to HDFS which has folder structure /train, /test
-            pass
+            print(f"Fetching {table_type} data for {dataset_id} from MongoDB...")
+            try:
+                # Query MongoDB for this dataset_id and type
+                # We expect the ingestion to have stored 'dataset_type' as 'train' or 'test'
+                pipeline = [
+                    {"$match": {"dataset_id": dataset_id, "dataset_type": table_type}},
+                    {"$project": {"_id": 0}} # Exclude Mongo ID
+                ]
+                
+                # Use aggregate or find. Find is simpler if we just want all records.
+                # However, sorting is important for time series.
+                cursor = self.mongo.collection.find(
+                    {"dataset_id": dataset_id, "dataset_type": table_type},
+                    {"_id": 0}
+                ).sort([("unit_number", 1), ("time_cycles", 1)])
+                
+                data = list(cursor)
+                if data:
+                    return pd.DataFrame(data)
+                else:
+                    print(f"No data found in MongoDB for {dataset_id} ({table_type}). Fallback to HDFS.")
+            except Exception as e:
+                print(f"MongoDB Fetch Error: {e}. Fallback to HDFS.")
 
         # Fallback to HDFS
         hdfs_path = f"/bda_project/processed/{table_type}/{dataset_id}.csv"

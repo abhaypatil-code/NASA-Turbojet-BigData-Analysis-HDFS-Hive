@@ -3,6 +3,10 @@ pymongo
 pandas
 matplotlib
 seaborn
+plotly
+scikit-learn
+joblib
+numpy
 mrjob
 hdfs
 setuptools
