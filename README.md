@@ -1,4 +1,4 @@
-# Big Data Analytics Project - Preventative Maintenance (NASA CMaps)
+# Big Data Analytics Project -  (NASA CMAPSS)
 
 This project is a complete **Big Data Analytics Platform** for the NASA C-MAPSS Turbofan Engine Degradation dataset. It integrates **HDFS**, **Hive**, **Machine Learning (Scikit-Learn)**, and **Streamlit** into a unified dashboard for predictive maintenance.
 
