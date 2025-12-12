@@ -36,9 +36,10 @@ HDFS_DIRS = {
     "processed": f"{HDFS_ROOT}/processed",
     "train": f"{HDFS_ROOT}/processed/train",
     "test": f"{HDFS_ROOT}/processed/test",
-    "rul": f"{HDFS_ROOT}/processed/rul",
+    "rules": f"{HDFS_ROOT}/processed/rul",
     "mapreduce_output": f"{HDFS_ROOT}/mapreduce_output",
     "models": f"{HDFS_ROOT}/models",
+    "uploads": f"{HDFS_ROOT}/uploads",
 }
 
 # ==================== DATASET SCHEMA & METADATA ====================

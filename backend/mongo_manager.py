@@ -391,53 +391,45 @@ class MongoManager:
         return result[0] if result else {}
     
     def get_degradation_trends(self, dataset_id="FD001", dataset_type="train", 
-                               window_size=50, sensors=None):
+                               window_size=None, sensors=None):
         """
-        Analyze sensor degradation trends using time windows
+        Analyze average sensor degradation trends across the entire fleet
         
         Args:
             dataset_id: Dataset identifier
             dataset_type: 'train' or 'test'
-            window_size: Size of cycle window for trend analysis
-            sensors: List of sensors to analyze (default: critical sensors)
+            window_size: Unused (kept for compatibility)
+            sensors: List of sensors to analyze (default: all sensors)
         
         Returns:
-            list: Degradation trend data per unit
+            list: Average sensor values data per cycle
         """
         if self.collection is None:
             return []
         
         if sensors is None:
-            sensors = CRITICAL_SENSORS[:5]  # Top 5 critical sensors
+            # Analyze all sensors 1-21
+            sensors = [f"sensor_{i}" for i in range(1, 22)]
         
-        # This requires calculating rate of change over time windows
-        # Simplified version: compare early vs late cycle averages
+        # Calculate average value for each sensor at each time cycle across all units
+        group_stage = {
+            "_id": "$time_cycles",
+            "unit_count": {"$sum": 1}
+        }
+        
+        for sensor in sensors:
+            group_stage[sensor] = {"$avg": f"${sensor}"}
+            
         pipeline = [
             {"$match": {"dataset_id": dataset_id, "dataset_type": dataset_type}},
-            {"$sort": {"unit_number": ASCENDING, "time_cycles": ASCENDING}},
-            {"$group": {
-                "_id": "$unit_number",
-                "total_cycles": {"$max": "$time_cycles"},
-                "early_data": {
-                    "$push": {
-                        "$cond": [
-                            {"$lte": ["$time_cycles", window_size]},
-                            {sensor: f"${sensor}" for sensor in sensors},
-                            "$$REMOVE"
-                        ]
-                    }
-                },
-                "late_data": {
-                    "$push": {
-                        "$cond": [
-                            {"$gt": ["$time_cycles", {"$subtract": ["$time_cycles", window_size]}]},
-                            {sensor: f"${sensor}" for sensor in sensors},
-                            "$$REMOVE"
-                        ]
-                    }
-                }
-            }},
-            {"$limit": 100}  # Limit for performance
+            {"$group": group_stage},
+            {"$sort": {"_id": ASCENDING}},
+            {"$project": {
+                "time_cycles": "$_id",
+                "unit_count": 1,
+                **{sensor: 1 for sensor in sensors},
+                "_id": 0
+            }}
         ]
         
         return list(self.collection.aggregate(pipeline))

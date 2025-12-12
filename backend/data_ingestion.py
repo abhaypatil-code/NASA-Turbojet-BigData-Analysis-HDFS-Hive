@@ -3,6 +3,7 @@ import pandas as pd
 from backend.hdfs_manager import HDFSManager
 from backend.mongo_manager import MongoManager
 from backend.config import CMAPS_DIR, CMAPSS_SCHEMA
+import tempfile
 
 class DataIngestion:
     def __init__(self):
@@ -61,6 +62,7 @@ class DataIngestion:
 
                 # 1. MongoDB Ingestion
                 if conn:
+                    # Ingest only if we haven't already (simple check could be added here, but MongoManager handles upsert/delete-insert)
                     success, msg = self.mongo.ingest_data(df)
                     if success:
                         status_report.append(f"MONGO SUCCESS: {filename} -> {msg}")
@@ -68,25 +70,27 @@ class DataIngestion:
                         status_report.append(f"MONGO FAIL: {filename} -> {msg}")
 
                 # 2. HDFS Ingestion
-                # Save to temporary CSV
-                temp_csv = f"temp_{filename}.csv"
-                # Use standard comma separator, no header for Hive textfile compatibility (or include header if Hive skips it)
-                # Usually Hive TEXTFILE doesn't support headers natively without serde props. 
-                # Let's write WITHOUT header for simplicity in loading.
-                df.to_csv(temp_csv, index=False, header=False)
-
-                # Upload to HDFS
-                hdfs_dest = f"{self.processed_dir}/{table_type}/{dataset_id}.csv"
-                success, msg = self.hdfs.upload_file(temp_csv, hdfs_dest)
+                # Save to temporary CSV using tempfile for safety
+                fd, temp_csv = tempfile.mkstemp(suffix=f"_{filename}.csv")
+                os.close(fd)
                 
-                # Clean up local temp
-                if os.path.exists(temp_csv):
-                    os.remove(temp_csv)
+                try:
+                    # Save without header for Hive compatibility
+                    df.to_csv(temp_csv, index=False, header=False)
 
-                if success:
-                    status_report.append(f"HDFS SUCCESS: {filename} -> {hdfs_dest}")
-                else:
-                    status_report.append(f"HDFS FAILURE: {filename} -> {msg}")
+                    # Upload to HDFS
+                    hdfs_dest = f"{self.processed_dir}/{table_type}/{dataset_id}.csv"
+                    success, msg = self.hdfs.upload_file(temp_csv, hdfs_dest)
+                    
+                    if success:
+                        status_report.append(f"HDFS SUCCESS: {filename} -> {hdfs_dest}")
+                    else:
+                        status_report.append(f"HDFS FAILURE: {filename} -> {msg}")
+                        
+                finally:
+                    # Clean up local temp
+                    if os.path.exists(temp_csv):
+                        os.remove(temp_csv)
 
             except Exception as e:
                 status_report.append(f"ERROR: {filename} -> {str(e)}")
@@ -98,4 +102,3 @@ if __name__ == "__main__":
     print("Starting Ingestion...")
     report = di.process_and_upload()
     print(report)
-

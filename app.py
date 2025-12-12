@@ -11,6 +11,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
 import json
+import socket
+import shutil
 
 # Backend imports
 from backend.mongo_manager import MongoManager
@@ -93,10 +95,18 @@ def check_mongo_status():
 
 def check_hdfs_status():
     try:
+        # Simple list of root to check connectivity
         files = svc.hdfs.list_files("/")
         return len(files) >= 0, "Active"
-    except:
-        return False, "Unreachable"
+    except Exception as e:
+        return False, f"Unreachable: {str(e)}"
+
+def check_socket(host, port, timeout=2):
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
 
 # ==================== SIDEBAR ====================
 with st.sidebar:
@@ -117,6 +127,9 @@ with st.sidebar:
     else:
         st.error(f"✗ Disconnected")
         st.caption(f"_{mongo_msg}_")
+        if st.button("Run: docker start mongodb"):
+            os.system("docker start mongodb")
+            st.rerun()
     
     st.subheader("🐘 HDFS")
     hdfs_ok, hdfs_msg = check_hdfs_status()
@@ -124,6 +137,9 @@ with st.sidebar:
         st.success(f"✓ {hdfs_msg}")
     else:
         st.error(f"✗ {hdfs_msg}")
+        if st.button("Run: docker start namenode"):
+            os.system("docker start namenode datanode")
+            st.rerun()
     
     st.markdown("---")
     
@@ -150,6 +166,16 @@ with tab1:
     st.title("✈️ NASA Turbojet Predictive Maintenance Platform")
     st.markdown("### Big Data Analytics for C-MAPSS Turbofan Engine Degradation")
     
+    # Startup Environment Check
+    with st.expander("🛠️ Environment Status Check", expanded=not (mongo_ok and hdfs_ok)):
+        chk_col1, chk_col2, chk_col3 = st.columns(3)
+        chk_col1.metric("MongoDB Port (27017)", "OPEN" if check_socket("localhost", 27017) else "CLOSED")
+        chk_col2.metric("HDFS WebUI (9870)", "OPEN" if check_socket("localhost", 9870) else "CLOSED")
+        chk_col3.metric("Hive Server (10000)", "OPEN" if check_socket("localhost", 10000) else "CLOSED")
+        
+        if not (mongo_ok and hdfs_ok):
+             st.warning("⚠️ Some services appear to be down. Please ensure Docker containers are running.")
+
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.markdown('<div class="metric-card"><h3>MongoDB</h3><p>Big Data Storage</p></div>', unsafe_allow_html=True)
@@ -186,8 +212,8 @@ with tab1:
         st.warning("""**⚙️ System Requirements**\n\n- **MongoDB**: Required for analytics and storage\n- **Docker**: HDFS + Hive containers must be running\n- **Datasets**: Place CMAPSS files in `/CMAPSS` directory\n- **Resources**: 8GB RAM recommended for processing""")
     
     st.subheader("🔧 Turbofan Engine Architecture")
-    st.image("https://upload.wikimedia.org/wikipedia/commons/e/ee/Turbofan_operation_lb.svg", 
-             caption="Turbofan engine showing airflow and sensor locations", use_container_width=True)
+    st.image("turbofan_architecture.png", 
+             caption="Detail of Turbofan Engine Components and Sensor Locations", use_container_width=True)
 
 # ==================== TAB 2: DATA INGESTION ====================
 with tab2:
@@ -239,6 +265,7 @@ with tab2:
             storage = svc.hdfs.get_storage_summary()
             total_mb = storage.get('total', 0) / (1024 * 1024)
             st.metric("Total Size", f"{total_mb:.2f} MB")
+            st.metric("Train Data", f"{storage.get('train', 0) / (1024 * 1024):.2f} MB")
 
 # ==================== TAB 3: DATA EXPLORATION ====================
 with tab3:
@@ -363,13 +390,36 @@ with tab4:
         
         with analytics_tab2:
             st.subheader("Degradation Trend Analysis")
-            degradation = svc.mongo.get_degradation_trends(dataset_id_mongo, "train")
+            st.markdown("Analyze how average sensor values change over operational cycles across the entire fleet. This helps identify degradation patterns common to all engines.")
             
-            if degradation:
-                st.info(f"Analyzed {len(degradation)} engine units for degradation patterns")
-                st.json(degradation[:3])  # Show sample
+            # Get data
+            degradation_data = svc.mongo.get_degradation_trends(dataset_id_mongo, "train")
+            
+            if degradation_data:
+                df_deg = pd.DataFrame(degradation_data)
+                
+                # Sensor selection
+                available_sensors = [col for col in df_deg.columns if col.startswith("sensor_")]
+                default_sensors = ["sensor_2", "sensor_3", "sensor_4", "sensor_7"] # Standard critical set
+                # Filter defaults to only those that exist
+                default_sensors = [s for s in default_sensors if s in available_sensors]
+                
+                selected_sensors = st.multiselect("Select Sensors to Visualize", 
+                                                available_sensors, 
+                                                default=default_sensors)
+                
+                if selected_sensors:
+                    fig = px.line(df_deg, x='time_cycles', y=selected_sensors,
+                                title=f"Average Sensor Degradation ({dataset_id_mongo})",
+                                labels={'time_cycles': 'Operational Cycle', 'value': 'Sensor Reading'})
+                    fig.update_layout(template="plotly_dark", hovermode="x unified")
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    st.caption(f"Based on {df_deg['unit_count'].iloc[0]} engine units")
+                else:
+                    st.info("Select sensors to visualize trends")
             else:
-                st.warning("No degradation data")
+                st.warning("No degradation data available")
         
         with analytics_tab3:
             st.subheader("Condition-Based Performance Metrics")
@@ -389,69 +439,181 @@ with tab4:
         st.error("MongoDB connection required")
 
 # ==================== TAB 5: HDFS MANAGEMENT ====================
+# ==================== TAB 5: HDFS MANAGEMENT ====================
 with tab5:
     st.header("🐘 HDFS File Management")
     
-    if hdfs_ok:
-        hdfs_tab1, hdfs_tab2, hdfs_tab3 = st.tabs(["📂 File Browser", "⬆️ Upload", "📊 Storage Stats"])
+    # Strictly structured tabs as requested
+    hdfs_nav = st.radio("Select Operation", 
+        ["🟢 Install Hadoop", "➕ Adding files and directories", "🔍 Retrieving files", "🗑️ Deleting files and directories"],
+        horizontal=True, label_visibility="collapsed")
+    
+    st.markdown("---")
+
+    # 1. INSTALL HADOOP
+    if "Install" in hdfs_nav:
+        st.subheader("🟢 Install & Configure Hadoop")
         
-        with hdfs_tab1:
-            st.subheader("HDFS File Browser")
-            path = st.text_input("HDFS Path", value=HDFS_ROOT)
+        col_status, col_guide = st.columns(2)
+        
+        with col_status:
+            st.markdown("### Current Status")
+            if hdfs_ok:
+                st.success("✅ **Hadoop is Installed and Running**")
+                st.info(f"**Connection:** Active\n\n**WebUI:** http://localhost:9870")
+            else:
+                st.error("❌ **Hadoop Connection Failed**")
+                st.warning("Hadoop services are not reachable.")
+        
+        with col_guide:
+            st.markdown("### Installation Guide")
+            st.markdown("""
+            **Requirement:** This system uses **Docker** to run Hadoop.
             
-            col_browse1, col_browse2 = st.columns([3, 1])
-            with col_browse1:
-                if st.button("📁 List Files", use_container_width=True):
-                    files = svc.hdfs.list_files(path)
-                    if files:
-                        df_files = pd.DataFrame(files)
-                        st.dataframe(df_files, use_container_width=True)
+            **Steps to Install/Run:**
+            1.  Ensure Docker Desktop is installed.
+            2.  Open Terminal in project root.
+            3.  Run: `docker-compose up -d`
+            4.  Wait for containers (`namenode`, `datanode`) to start.
+            """)
+            
+            if not hdfs_ok:
+                if st.button("🚀 Attempt to Start Hadoop (Docker)"):
+                    with st.spinner("Starting containers..."):
+                        os.system("docker start namenode datanode hive-server")
+                        st.rerun()
+
+    # 2. ADDING FILES AND DIRECTORIES
+    elif "Adding" in hdfs_nav:
+        st.subheader("➕ Adding Files and Directories")
+        
+        if not hdfs_ok:
+            st.error("Please connect to Hadoop first (See 'Install Hadoop' tab).")
+        else:
+            col_add1, col_add2 = st.columns(2)
+            
+            with col_add1:
+                st.markdown("#### 📁 Create Directory")
+                new_dir_path = st.text_input("Parent Path", value=HDFS_ROOT, key="mkdir_parent")
+                new_dir_name = st.text_input("New Directory Name", key="mkdir_name")
+                
+                if st.button("Create Directory"):
+                    if new_dir_name:
+                        full_path = f"{new_dir_path}/{new_dir_name}".replace("//", "/")
+                        success, msg = svc.hdfs.mkdir(full_path)
+                        if success:
+                            show_status_box(f"Created: `{full_path}`", "success")
+                        else:
+                            show_status_box(f"Failed: {msg}", "error")
                     else:
-                        st.warning("Directory empty or not found")
+                        st.warning("Enter directory name")
             
-            with col_browse2:
-                if st.button("🗑️ Delete Path"):
-                    success, msg = svc.hdfs.delete_file(path)
+            with col_add2:
+                st.markdown("#### ⬆️ Upload File")
+                dest_path = st.text_input("Destination Path", value=f"{HDFS_ROOT}/uploads/", key="upload_dest")
+                uploaded_file = st.file_uploader("Select File")
+                
+                if uploaded_file and st.button("Upload File"):
+                    temp_path = f"temp_{uploaded_file.name}"
+                    with open(temp_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+                    
+                    svc.hdfs.mkdir(dest_path) # Ensure dest exists
+                    final_dest = f"{dest_path}/{uploaded_file.name}".replace("//", "/")
+                    
+                    success, msg = svc.hdfs.upload_file(temp_path, final_dest)
+                    
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
+                    
                     if success:
-                        show_status_box(f"Deleted {path}", "success")
+                        show_status_box(f"Uploaded: `{final_dest}`", "success")
                     else:
-                        show_status_box(f"Delete failed: {msg}", "error")
+                        show_status_box(f"Failed: {msg}", "error")
+
+    # 3. RETRIEVING FILES
+    elif "Retrieving" in hdfs_nav:
+        st.subheader("🔍 Retrieving Files")
         
-        with hdfs_tab2:
-            st.subheader("Upload File to HDFS")
-            uploaded_file = st.file_uploader("Choose file to upload")
-            dest_path = st.text_input("Destination HDFS path", value=f"{HDFS_ROOT}/uploads/")
+        if not hdfs_ok:
+            st.error("Please connect to Hadoop first (See 'Install Hadoop' tab).")
+        else:
+            path_browse = st.text_input("Browse Path", value=HDFS_ROOT, key="retrieve_path")
             
-            if uploaded_file and st.button("⬆️ Upload to HDFS"):
-                # Save temp file
-                temp_path = f"temp_{uploaded_file.name}"
-                with open(temp_path, "wb") as f:
-                    f.write(uploaded_file.getbuffer())
+            files = svc.hdfs.list_files(path_browse)
+            if files:
+                # Filter only files for clear retrieval
+                file_list = [f for f in files if f['type'] == 'file']
                 
-                success, msg = svc.hdfs.upload_file(temp_path, f"{dest_path}{uploaded_file.name}")
-                os.remove(temp_path)
-                
-                if success:
-                    show_status_box(f"Uploaded {uploaded_file.name} to HDFS", "success")
+                if file_list:
+                    st.markdown(f"**Found {len(file_list)} files in `{path_browse}`:**")
+                    
+                    # Create a readable table for selection
+                    df_files = pd.DataFrame(file_list)[['name', 'size', 'date', 'owner']]
+                    st.dataframe(df_files, use_container_width=True)
+                    
+                    st.markdown("### Download Selection")
+                    selected_file_name = st.selectbox("Select File to Retrieve", [f['name'] for f in file_list])
+                    
+                    if selected_file_name:
+                        col_ret1, col_ret2 = st.columns(2)
+                        full_hdfs_path = f"{path_browse}/{selected_file_name}".replace("//", "/")
+                        
+                        with col_ret1:
+                            if st.button("⬇️ Retrieve (Download)"):
+                                local_dest = f"downloads/{selected_file_name}"
+                                success, msg = svc.hdfs.download_file(full_hdfs_path, local_dest)
+                                if success:
+                                    st.success(f"File Retrieved: `{local_dest}`")
+                                    with open(local_dest, "rb") as f:
+                                        st.download_button("Save to Local Disk", f, file_name=selected_file_name)
+                                else:
+                                    st.error(f"Retrieval Failed: {msg}")
+                        
+                        with col_ret2:
+                            if st.button("👁️ Retrieve Content (Preview)"):
+                                success, content = svc.hdfs.cat_file(full_hdfs_path, head_bytes=2000)
+                                if success:
+                                    st.markdown("**File Content Preview:**")
+                                    st.code(content)
+                                else:
+                                    st.error(f"Read Failed: {content}")
                 else:
-                    show_status_box(f"Upload failed: {msg}", "error")
+                    st.info("No files found in this directory (only directories).")
+            else:
+                st.warning("Path not found or empty.")
+
+    # 4. DELETING FILES AND DIRECTORIES
+    elif "Deleting" in hdfs_nav:
+        st.subheader("🗑️ Deleting Files and Directories")
         
-        with hdfs_tab3:
-            st.subheader("HDFS Storage Statistics")
-            storage = svc.hdfs.get_storage_summary()
+        if not hdfs_ok:
+            st.error("Please connect to Hadoop first (See 'Install Hadoop' tab).")
+        else:
+            st.warning("⚠️ Warning: Deletion is permanent.")
             
-            col_storage1, col_storage2, col_storage3 = st.columns(3)
-            col_storage1.metric("Train Data", f"{storage.get('train', 0) / (1024*1024):.2f} MB")
-            col_storage2.metric("Test Data", f"{storage.get('test', 0) / (1024*1024):.2f} MB")
-            col_storage3.metric("Total", f"{storage.get('total', 0) / (1024*1024):.2f} MB")
+            del_path = st.text_input("Full Path to Delete", value=f"{HDFS_ROOT}/uploads/filename.txt", key="del_path")
             
-            # Pie chart
-            fig = px.pie(values=[storage.get('train', 0), storage.get('test', 0), storage.get('rul', 0)],
-                        names=['Train', 'Test', 'RUL'], title="Storage Distribution")
-            fig.update_layout(template="plotly_dark")
-            st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.error("HDFS not available")
+            col_del1, col_del2 = st.columns([1, 4])
+            with col_del1:
+                # Double confirmation UI
+                if st.button("❌ DELETE"):
+                    if del_path == "/" or del_path == HDFS_ROOT:
+                         st.error("Safety Block: Cannot delete root directories via UI.")
+                    else:
+                         success, msg = svc.hdfs.delete_file(del_path)
+                         if success:
+                             show_status_box(f"Successfully Deleted: `{del_path}`", "success")
+                         else:
+                             show_status_box(f"Deletion Failed: {msg}", "error")
+            
+            st.markdown("---")
+            st.markdown("### Browse to find paths")
+            # Mini browser helper
+            browse_path = st.text_input("Helper Browser", value=HDFS_ROOT, key="del_browse_path")
+            files = svc.hdfs.list_files(browse_path)
+            if files:
+                 st.dataframe(pd.DataFrame(files)[['name', 'type', 'size']], use_container_width=True)
 
 # ==================== TAB 6: HIVEQL QUERIES ====================
 with tab6:
@@ -536,8 +698,12 @@ with tab7:
     
     # Execution mode
     runner = st.radio("Execution Mode", MAPREDUCE_CONFIG['runners'], horizontal=True,
-                     help="inline=local simulation, local=local hadoop, hadoop=cluster")
+                     help="inline=local simulation (safest), local=single-node hadoop, hadoop=cluster",
+                     index=0) # Default to inline
     
+    if runner == "hadoop" and os.name == 'nt':
+        st.warning("⚠️ 'hadoop' runner on Windows requires Hadoop binaries in PATH. If using Docker, ensure configuration is correct or use 'inline'.")
+
     # Input file selection
     if runner == "inline":
         try:
@@ -549,17 +715,20 @@ with tab7:
         input_file = st.text_input("Input File (HDFS Path)", value="/bda_project/processed/train/FD001.csv")
     
     if st.button("▶️ Run MapReduce Job", type="primary", use_container_width=True):
-        with st.spinner(f"Running {job_info['script']} ({runner})..."):
+        with st.status(f"Running {job_info['script']} ({runner})...", expanded=True) as status:
+            st.write("🚀 Initializing job...")
             script_name = job_info['script']
             success, output = svc.mr.run_job(script_name, input_file, runner=runner)
             
             if success:
+                status.update(label="Job Completed Successfully!", state="complete", expanded=False)
                 st.success("MapReduce job completed!")
-                with st.expander("📊 Job Output", expanded=True):
-                    st.code(output)
+                st.subheader("📊 Job Output")
+                st.code(output, language="text")
             else:
+                status.update(label="Job Failed", state="error", expanded=True)
                 st.error("Job failed")
-                st.code(output)
+                st.code(output, language="text")
 
 # ==================== TAB 8: RUL PREDICTION ====================
 with tab8:
