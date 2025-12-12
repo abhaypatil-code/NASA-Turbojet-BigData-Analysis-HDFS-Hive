@@ -43,7 +43,7 @@ class MongoManager:
     
     def _create_indexes(self):
         """Create compound indexes for efficient querying"""
-        if not self.collection:
+        if self.collection is None:
             return
         
         try:
@@ -78,7 +78,7 @@ class MongoManager:
         Returns:
             tuple: (success, message)
         """
-        if not self.collection:
+        if self.collection is None:
             return False, "MongoDB not connected."
         
         if batch_size is None:
@@ -147,7 +147,7 @@ class MongoManager:
         Returns:
             list: Records matching criteria
         """
-        if not self.collection:
+        if self.collection is None:
             return []
         
         query = {'dataset_id': dataset_id}
@@ -168,7 +168,7 @@ class MongoManager:
     
     def get_summary(self):
         """Get overall database summary statistics"""
-        if not self.collection:
+        if self.collection is None:
             return {"status": "Not Connected"}
         
         count = self.collection.count_documents({})
@@ -206,7 +206,7 @@ class MongoManager:
     
     def get_sensor_trends(self, unit_id, dataset_id="FD001", dataset_type="train"):
         """Get time-series sensor data for a specific engine unit"""
-        if not self.collection:
+        if self.collection is None:
             return []
         
         cursor = self.collection.find(
@@ -235,7 +235,7 @@ class MongoManager:
         Returns:
             tuple: (success, message)
         """
-        if not self.collection:
+        if self.collection is None:
             return False, "MongoDB not connected."
         
         try:
@@ -269,7 +269,7 @@ class MongoManager:
         Returns:
             tuple: (success, message)
         """
-        if not self.collection:
+        if self.collection is None:
             return False, "MongoDB not connected."
         
         try:
@@ -287,7 +287,7 @@ class MongoManager:
     
     def get_avg_sensors_per_unit(self, dataset_id="FD001", dataset_type="train"):
         """Calculate average sensor values per engine unit"""
-        if not self.collection:
+        if self.collection is None:
             return []
         
         # Build aggregation for all sensors
@@ -320,7 +320,7 @@ class MongoManager:
         Calculate comprehensive health scores for each engine unit
         Uses multiple sensor indicators to compute overall health index
         """
-        if not self.collection:
+        if self.collection is None:
             return []
         
         pipeline = [
@@ -368,7 +368,7 @@ class MongoManager:
         Returns:
             dict: Statistics for each sensor
         """
-        if not self.collection:
+        if self.collection is None:
             return {}
         
         if sensors is None:
@@ -404,7 +404,7 @@ class MongoManager:
         Returns:
             list: Degradation trend data per unit
         """
-        if not self.collection:
+        if self.collection is None:
             return []
         
         if sensors is None:
@@ -447,7 +447,7 @@ class MongoManager:
         Extract aggregated features useful for RUL prediction
         Includes rolling statistics and sensor interactions
         """
-        if not self.collection:
+        if self.collection is None:
             return []
         
         pipeline = [
@@ -501,7 +501,7 @@ class MongoManager:
         Analyze performance metrics grouped by operational conditions
         Useful for datasets with multiple operating conditions (FD002, FD004)
         """
-        if not self.collection:
+        if self.collection is None:
             return []
         
         # Group by operational setting ranges to identify conditions
