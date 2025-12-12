@@ -4,6 +4,17 @@ MapReduce Job: Feature Summary
 Calculates comprehensive statistics for all 26 features (3 settings + 23 sensors)
 """
 
+# Compatibility fix for Python 3.14+ where pipes module is removed
+try:
+    import pipes
+except ImportError:
+    import sys
+    import shlex
+    from types import ModuleType
+    pipes = ModuleType("pipes")
+    pipes.quote = shlex.quote
+    sys.modules["pipes"] = pipes
+
 from mrjob.job import MRJob
 from mrjob.step import MRStep
 import json
@@ -35,7 +46,7 @@ class MRFeatureSummary(MRJob):
             # Skip unit_number (index 0) and time_cycles (index 1)
             # Process operational settings (indices 2-4)
             feature_names = ['op_setting_1', 'op_setting_2', 'op_setting_3'] + \
-                          [f'sensor_{i}' for i in range(1, 22)]
+                          ['sensor_{}'.format(i) for i in range(1, 22)]
             
             for idx, feature_name in enumerate(feature_names, start=2):
                 if idx < len(parts):

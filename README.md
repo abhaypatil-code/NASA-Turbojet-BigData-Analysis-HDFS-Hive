@@ -58,7 +58,7 @@ This is a comprehensive **Big Data Analytics Platform** integrating **MongoDB**,
 ## 📂 Project Structure
 
 ```
-NASATurbojet-BigDataAnalysis/
+NASATurbojet-BigDataAnalysis-using-HDFS-and-Hive/
 ├── CMAPSS/                          # Raw NASA datasets
 │   ├── train_FD001.txt              # Training data
 │   ├── test_FD001.txt               # Test data
@@ -71,7 +71,6 @@ NASATurbojet-BigDataAnalysis/
 │   ├── hive_manager.py              # Hive tables + 20 HiveQL queries
 │   ├── mapreduce_manager.py         # MapReduce job execution
 │   ├── data_ingestion.py            # ETL pipeline
-│   ├── data_cleaner.py              # Data preprocessing
 │   └── model_service.py             # ML training & inference
 ├── mapreduce_jobs/                  # MapReduce job scripts
 │   ├── mr_cycle_counter.py
@@ -88,6 +87,7 @@ NASATurbojet-BigDataAnalysis/
 ├── SETUP_GUIDE.md                   # Detailed setup instructions
 └── architecture.md                  # System architecture documentation
 ```
+
 
 ---
 

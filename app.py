@@ -23,7 +23,7 @@ from backend.data_ingestion import DataIngestion
 from backend.model_service import ModelService
 from backend.config import (
     CMAPS_DIR, HDFS_ROOT, DATASET_METADATA, CRITICAL_SENSORS,
-    get_all_datasets, MAPREDUCE_CONFIG
+    get_all_datasets, MAPREDUCE_CONFIG, USE_DOCKER
 )
 
 # ====================PAGE CONFIGURATION ====================
@@ -76,6 +76,9 @@ class SessionState:
         self.model = ModelService()
 
 if 'services' not in st.session_state:
+    st.session_state.services = SessionState()
+elif not hasattr(st.session_state.services.mongo, 'get_sample_documents'):
+    # Force reload if old instance is cached
     st.session_state.services = SessionState()
 if 'last_refresh' not in st.session_state:
     st.session_state.last_refresh = datetime.now()
@@ -368,8 +371,8 @@ with tab4:
     if mongo_ok:
         dataset_id_mongo = st.selectbox("Select Dataset", get_all_datasets(), key="mongo_dataset")
         
-        analytics_tab1, analytics_tab2, analytics_tab3 = st.tabs([
-            "🏥 Health Scores", "📉 Degradation Analysis", "🎯 Condition-Based Metrics"
+        analytics_tab1, analytics_tab2, analytics_tab3, analytics_tab4 = st.tabs([
+            "🏥 Health Scores", "📉 Degradation Analysis", "🎯 Condition-Based Metrics", "📄 Sample Documents"
         ])
         
         with analytics_tab1:
@@ -435,6 +438,23 @@ with tab4:
                     st.plotly_chart(fig, use_container_width=True)
             else:
                 st.info(f"{dataset_id_mongo} has single operating condition. Use FD002 or FD004 for multi-condition analysis.")
+        
+        with analytics_tab4:
+            st.subheader("📄 Raw Document Inspection")
+            st.markdown("View a sample of raw documents stored in MongoDB to understand the data structure.")
+            
+            sample_limit = st.slider("Number of documents", 1, 20, 5)
+            
+            samples = svc.mongo.get_sample_documents(dataset_id_mongo, "train", limit=sample_limit)
+            
+            if samples:
+                st.write(f"Showing {len(samples)} documents from `{dataset_id_mongo}`:")
+                st.json(samples)
+                
+                with st.expander("View as DataFrame"):
+                    st.dataframe(pd.DataFrame(samples), use_container_width=True)
+            else:
+                st.warning("No documents found. Please run data ingestion first.")
     else:
         st.error("MongoDB connection required")
 
@@ -701,8 +721,11 @@ with tab7:
                      help="inline=local simulation (safest), local=single-node hadoop, hadoop=cluster",
                      index=0) # Default to inline
     
-    if runner == "hadoop" and os.name == 'nt':
-        st.warning("⚠️ 'hadoop' runner on Windows requires Hadoop binaries in PATH. If using Docker, ensure configuration is correct or use 'inline'.")
+    if runner == "hadoop":
+        if os.name == 'nt' and not USE_DOCKER:
+            st.warning("⚠️ 'hadoop' runner on Windows requires Hadoop binaries in PATH. Enable Docker in config or use 'inline'.")
+        elif USE_DOCKER:
+            st.info("🐳 Jobs will run inside the Docker NameNode container.")
 
     # Input file selection
     if runner == "inline":

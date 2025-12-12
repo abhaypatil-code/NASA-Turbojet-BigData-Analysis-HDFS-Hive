@@ -4,6 +4,18 @@ MapReduce Job: Cycle Counter
 Counts total cycles and provides statistics per engine unit
 """
 
+
+# Compatibility fix for Python 3.14+ where pipes module is removed
+try:
+    import pipes
+except ImportError:
+    import sys
+    import shlex
+    from types import ModuleType
+    pipes = ModuleType("pipes")
+    pipes.quote = shlex.quote
+    sys.modules["pipes"] = pipes
+
 from mrjob.job import MRJob
 from mrjob.step import MRStep
 import re

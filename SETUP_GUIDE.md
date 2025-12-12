@@ -13,7 +13,7 @@ This method installs all dependencies (MongoDB, Hadoop, Hive) in isolated contai
 *   Verify installation by running `docker --version` in your terminal.
 
 ### 2. Start Services
-Open a terminal in this project folder (`D:\Software\Projects\NASATurbojet-BigDataAnalysis-using-HDFS-and-Hive`) and run:
+Open a terminal in the project root directory and run:
 ```bash
 docker-compose up -d
 ```

@@ -26,7 +26,7 @@ class MROpCount(MRJob):
             
             if len(parts) > 0:
                 unit_id = parts[0]
-                yield f"Unit_{unit_id}", 1
+                yield "Unit_{}".format(unit_id), 1
         except Exception:
             pass
 

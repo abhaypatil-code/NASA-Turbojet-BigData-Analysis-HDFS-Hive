@@ -4,6 +4,18 @@ MapReduce Job: Degradation Metrics
 Computes engine degradation metrics based on sensor trends
 """
 
+
+# Compatibility fix for Python 3.14+ where pipes module is removed
+try:
+    import pipes
+except ImportError:
+    import sys
+    import shlex
+    from types import ModuleType
+    pipes = ModuleType("pipes")
+    pipes.quote = shlex.quote
+    sys.modules["pipes"] = pipes
+
 from mrjob.job import MRJob
 from mrjob.step import MRStep
 import json
@@ -104,7 +116,7 @@ class MRDegradationMetrics(MRJob):
             else:
                 pct_change = 0
             
-            degradation[f'{sensor}_pct_change'] = round(pct_change, 2)
+            degradation['{}_pct_change'.format(sensor)] = round(pct_change, 2)
         
         # Calculate health index (simplified)
         # Higher temperature + lower pressure = worse health

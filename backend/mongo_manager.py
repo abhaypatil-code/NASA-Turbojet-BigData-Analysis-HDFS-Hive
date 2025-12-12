@@ -165,6 +165,20 @@ class MongoManager:
             cursor = cursor.limit(limit)
         
         return list(cursor)
+
+    def get_sample_documents(self, dataset_id="FD001", dataset_type="train", limit=5):
+        """
+        Get a few sample documents for inspection
+        """
+        if self.collection is None:
+            return []
+
+        cursor = self.collection.find(
+            {'dataset_id': dataset_id, 'dataset_type': dataset_type},
+            {'_id': 0}
+        ).limit(limit)
+        
+        return list(cursor)
     
     def get_summary(self):
         """Get overall database summary statistics"""

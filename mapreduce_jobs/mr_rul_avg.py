@@ -46,7 +46,7 @@ class MRRulAvg(MRJob):
                     # Round op setting to cluster
                     op_cluster = round(op_setting_1, 1)
                     
-                    yield f"OpSet1_{op_cluster}", sensor_4
+                    yield "OpSet1_{}".format(op_cluster), sensor_4
                 except ValueError:
                     pass
         except Exception:
