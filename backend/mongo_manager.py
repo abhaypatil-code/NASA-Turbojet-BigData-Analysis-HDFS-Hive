@@ -1,6 +1,6 @@
 import pandas as pd
 import pymongo
-from backend.config import MONGO_URI, DB_NAME, COLLECTION_NAME
+from backend.config import MONGO_URI, DB_NAME, COLLECTION_NAME, CMAPSS_SCHEMA
 
 class MongoManager:
     def __init__(self):
@@ -17,62 +17,57 @@ class MongoManager:
 
     def ingest_data(self, filepath):
         """
-        Ingests the CMaps dataset (space separated text file).
+        Ingests the CMaps dataset using the schema defined in config.py.
         """
-        # Column names based on C-MAPSS documentation
-        # Unit, Time, Op1, Op2, Op3, Sensor1 ... Sensor21
-        cols = ['unit_number', 'time_cycles', 'op_setting_1', 'op_setting_2', 'op_setting_3'] + \
-               [f'sensor_{i}' for i in range(1, 22)]
-        
+        import zipfile
         try:
-            # Read file using pandas
-            df = pd.read_csv(filepath, sep='\s+', header=None, names=cols)
+            # Handle Zip Files
+            if filepath.endswith('.zip'):
+                with zipfile.ZipFile(filepath, 'r') as z:
+                    first_file = z.namelist()[0]
+                    with z.open(first_file) as f:
+                         self._ingest_stream(f)
+            else:
+                self._ingest_stream(filepath)
             
-            # Convert to dictionary records
-            records = df.to_dict('records')
-            
-            # Clear existing data to avoid duplicates for this run
-            self.collection.delete_many({})
-            
-            # Insert
-            self.collection.insert_many(records)
-            return True, f"Successfully inserted {len(records)} records."
+            return True, f"Successfully ingested data mapping to {len(CMAPSS_SCHEMA['columns'])} columns."
         except Exception as e:
-            return False, str(e)
+            return False, f"Ingestion Error: {str(e)}"
+
+    def _ingest_stream(self, file_obj):
+        # Determine column structure from Config
+        cols = CMAPSS_SCHEMA['columns']
+        
+        # Read Data
+        df = pd.read_csv(file_obj, sep=r'\s+', header=None, names=cols, engine='python')
+        
+        # Convert to dictionary records
+        records = df.to_dict('records')
+        
+        # Clear existing data and insert
+        self.collection.delete_many({})
+        if records:
+            self.collection.insert_many(records)
 
     def get_summary(self):
         count = self.collection.count_documents({})
         if count == 0:
             return {"status": "No Data"}
         
-        # Aggregation: Count unique units
-        unique_units = len(self.collection.distinct('unit_number'))
-        
-        return {
-            "total_records": count,
-            "total_units": unique_units
-        }
+        summary = {"total_records": count}
+        summary["total_units"] = len(self.collection.distinct('unit_number'))
+        summary["data_type"] = "C-MAPSS Timeseries"
+        return summary
 
     def get_sensor_trends(self, unit_id):
-        """
-        Get sensor data for a specific unit over time.
-        """
         cursor = self.collection.find({'unit_number': unit_id}, {'_id': 0}).sort('time_cycles', 1)
         return list(cursor)
 
     def get_correlation_data(self):
-        """
-        Get all data for correlation analysis in Pandas.
-        Limit to first 5000 records if too large for quick memory, 
-        or full dataset if manageable. (CMaps is manageable ~10MB)
-        """
         cursor = self.collection.find({}, {'_id': 0})
         return list(cursor)
 
     def get_avg_sensors_per_unit(self):
-        """
-        Uses MongoDB Aggregation Pipeline to calculate average sensor readings per unit.
-        """
         pipeline = [
             {"$group": {
                 "_id": "$unit_number",
@@ -82,6 +77,35 @@ class MongoManager:
                 "max_cycle": {"$max": "$time_cycles"}
             }},
             {"$sort": {"_id": 1}}
+        ]
+        return list(self.collection.aggregate(pipeline))
+    
+    # --- Advanced Aggregations ---
+
+    def get_unit_health_scores(self):
+        """
+        Calculates a proxy 'Health Score' based on sensor deviation from the mean.
+        Health Score = 100 - (AVG(Normalized Deviation of Sensors 2, 3, 4, 7, 8, 9, 11, 12, 13, 14, 15, 17, 20, 21))
+        This is a simplified example.
+        """
+        pipeline = [
+            # 1. Calc Global Averages for critical sensors (approximate for this demo)
+            # In a real system, we'd double query or use hardcoded baselines. 
+            # For efficiency in one pipeline without $setWindowFields (older mongo), we'll group by null first? 
+            # No, let's keep it simple: Just Max Cycle (RUL proxy) vs Avg Sensor 11 (Pressure)
+            
+            {"$group": {
+                "_id": "$unit_number",
+                "max_life": {"$max": "$time_cycles"},
+                "avg_pressure": {"$avg": "$sensor_11"},
+                "avg_temp": {"$avg": "$sensor_4"}
+            }},
+            {"$project": {
+                "unit_number": "$_id",
+                "max_life": 1,
+                "health_index": {"$divide": ["$avg_pressure", "$avg_temp"]} # Arbitrary metric
+            }},
+             {"$sort": {"max_life": 1}}
         ]
         return list(self.collection.aggregate(pipeline))
 

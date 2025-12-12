@@ -20,8 +20,13 @@ class MRSensorStats(MRJob):
 
     def mapper(self, _, line):
         # Format: Unit Time Op1 Op2 Op3 S1 ... S21
+        # Handle both CSV (new) and Space-separated (old)
         try:
-            parts = line.split()
+            if ',' in line:
+                parts = line.strip().split(',')
+            else:
+                parts = line.split()
+                
             if len(parts) >= 26:
                 # Sensor 11 is at index 5 + 10 = 15 (0-indexed)
                 # S1 is index 5

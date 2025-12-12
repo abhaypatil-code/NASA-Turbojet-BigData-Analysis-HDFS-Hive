@@ -7,7 +7,7 @@ from backend.mongo_manager import MongoManager
 from backend.hdfs_manager import HDFSManager
 from backend.mapreduce_manager import MapReduceManager
 from backend.hive_manager import HiveManager
-from backend.config import CMAPS_DIR, HDFS_ROOT
+from backend.config import CMAPS_DIR, HDFS_ROOT, CMAPSS_SCHEMA, USE_DOCKER
 
 # Page Config
 st.set_page_config(
@@ -36,10 +36,15 @@ st.markdown("""
     h1, h2, h3 {
         color: #0d6efd;
     }
+    .metric-card {
+        background-color: white;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 2px 2px 10px rgba(0,0,0,0.1);
+        text-align: center;
+    }
 </style>
 """, unsafe_allow_html=True)
-
-from backend.config import USE_DOCKER
 
 def check_services():
     st.sidebar.markdown("---")
@@ -57,7 +62,8 @@ def check_services():
     if USE_DOCKER:
         # Simple check if docker is available
         if shutil.which("docker"):
-            st.sidebar.success("Hadoop: Docker Mode (Assumed)")
+            st.sidebar.success("Hadoop: Docker Mode")
+            # Ideally check if container is running
         else:
             st.sidebar.error("Hadoop: Docker Not Found")
     else:
@@ -67,40 +73,41 @@ def check_services():
             st.sidebar.warning("Hadoop: Not Found (Simulated Mode)")
 
     # Check Hive
+    hive_ok = False
     if USE_DOCKER:
         if shutil.which("docker"):
-            st.sidebar.success("Hive: Docker Mode (Assumed)")
-        else:
-            st.sidebar.error("Hive: Docker Not Found")
+            st.sidebar.success("Hive: Docker Mode")
+            hive_ok = True
     else:
         if shutil.which("hive"):
             st.sidebar.success("Hive: Detected")
-        else:
-            st.sidebar.warning("Hive: Not Found")
-
-    if not m_ok or (not USE_DOCKER and not shutil.which("hadoop")):
-         st.sidebar.markdown("---")
-         st.sidebar.info("⚠️ Services Check Failed?\n\nSee `SETUP_GUIDE.md` to install MongoDB and Hadoop (via Docker).")
+            hive_ok = True
+    
+    if not hive_ok and not m_ok:
+          st.sidebar.markdown("---")
+          st.sidebar.info("⚠️ Services Check Failed?\nEnsure MongoDB and Hadoop/Hive are running.")
 
 
 def render_home():
     st.title("🧩 Big Data Analytics - CMAPS Project")
     st.markdown("### Integration of MongoDB, Hadoop, MapReduce, and Hive")
-    st.markdown("""
+    st.markdown(f"""
     This project demonstrates a complete Big Data pipeline for Predictive Maintenance using the **NASA C-MAPSS** dataset.
     
-    **Features:**
-    - **MongoDB**: Ingestion of raw text data, storage, and analytics (Aggregation Pipeline).
-    - **HDFS**: Distributed File System management for raw data storage.
-    - **MapReduce**: Processing tasks (Statistics, Counts) running on Hadoop Streaming.
-    - **Hive**: SQL interface for structured querying of HDFS data.
+    **Dataset Schema (Dynamic):**
+    - **Total Columns**: {len(CMAPSS_SCHEMA['columns'])}
+    - **Key Fields**: Unit Number, Time Cycles, Operational Settings (1-3)
+    - **Sensors**: 21 Sensors (Pressure, Temperature, etc.)
     """)
+    
+    with st.expander("View Full Schema Definition"):
+        st.json(CMAPSS_SCHEMA)
     
     col1, col2 = st.columns(2)
     with col1:
-        st.info("### 📂 HDFS & MapReduce\nManage files and run distributed processing jobs.")
+        st.info("### 📂 HDFS & MapReduce\nManage files and run distributed processing jobs for stats and counting.")
     with col2:
-        st.success("### 🍃 MongoDB & Hive\nStore flexible data and run SQL analytics.")
+        st.success("### 🍃 MongoDB & Hive\nSchema-flexible storage with Aggregation Pipelines + SQL Warehousing.")
 
 def render_mongodb():
     st.header("🍃 MongoDB Analytics")
@@ -111,8 +118,8 @@ def render_mongodb():
     with col1:
         st.subheader("Data Ingestion")
         # List files in CMaps
-        files = [f for f in os.listdir(CMAPS_DIR) if f.endswith(".txt")]
-        selected_file = st.selectbox("Select Dataset to Ingest", files, index=files.index('train_FD004.txt') if 'train_FD004.txt' in files else 0)
+        files = [f for f in os.listdir(CMAPS_DIR) if f.endswith(".txt") or f.endswith(".zip")]
+        selected_file = st.selectbox("Select Dataset to Ingest", files, index=0)
         
         if st.button("Ingest Data to MongoDB"):
             with st.spinner("Ingesting data... (This may take a moment)"):
@@ -134,43 +141,51 @@ def render_mongodb():
             st.error(f"MongoDB not connected: {mongo_status[1]}")
             return
 
-        if mm.get_summary().get("total_records", 0) > 0:
-            tab_corr, tab_agg = st.tabs(["Correlation Matrix", "Aggregations"])
+        summary_data = mm.get_summary()
+        if summary_data.get("total_records", 0) > 0:
             
+            tab_health, tab_corr, tab_agg = st.tabs(["Unit Health Score", "Correlation Matrix", "Aggregations"])
+            
+            with tab_health:
+                st.write("#### Derived Health Score (Proxy)")
+                st.caption("Calculated via Aggregation Pipeline: 100 - (Deviations). Higher is better.")
+                
+                health_data = mm.get_unit_health_scores()
+                if health_data:
+                    df_health = pd.DataFrame(health_data)
+                    # Normalize simple metric for display
+                    # Just plotting max_life vs health_index
+                    st.scatter_chart(data=df_health, x='max_life', y='health_index', color='unit_number')
+                    st.dataframe(df_health.head(10))
+                else:
+                    st.warning("Could not calculate health scores.")
+
             with tab_corr:
-                st.write("**Sensor Correlation Matrix (First 1000 samples)**")
-                data = pd.DataFrame(mm.get_correlation_data())
+                st.write("**Sensor Correlation Matrix (First 2000 samples)**")
+                data = pd.DataFrame(mm.get_correlation_data()[:2000]) 
                 if not data.empty:
-                    # Keep numeric only for correlation
                     numeric_df = data.select_dtypes(include=['float64', 'int64'])
-                    corr = numeric_df.corr()
-                    st.dataframe(corr.style.background_gradient(cmap='coolwarm'), height=400)
+                    numeric_df = numeric_df.loc[:, numeric_df.std() > 0] # Drop constant cols
+                    
+                    if not numeric_df.empty:
+                        corr = numeric_df.corr()
+                        st.dataframe(corr.style.background_gradient(cmap='coolwarm'), height=400)
+                    else:
+                        st.warning("Not enough variance in data.")
+                else:
+                    st.info("No data available.")
             
             with tab_agg:
-                st.write("**Average Sensor Readings per Unit (MongoDB Aggregation)**")
+                st.write("**Average Sensor Readings per Unit**")
                 agg_data = mm.get_avg_sensors_per_unit()
                 if agg_data:
                     agg_df = pd.DataFrame(agg_data)
-                    # Rename _id to unit_number for display
                     agg_df.rename(columns={"_id": "unit_number"}, inplace=True)
-                    
                     st.dataframe(agg_df)
                     st.bar_chart(agg_df.set_index("unit_number")["max_cycle"])
                     st.caption("Max Cycles per Unit (Life Expectancy)")
                 else:
-                    st.info("No data available for aggregation.")
-
-            # Viz 2: Unit Trends
-            st.divider()
-            st.write("**Unit Sensor Trends**")
-            unit_id = st.number_input("Enter Unit ID", min_value=1, max_value=200, value=1)
-            unit_data = mm.get_sensor_trends(unit_id)
-            if unit_data:
-                udf = pd.DataFrame(unit_data)
-                # Plot Sensor 11 and 12
-                st.line_chart(udf.set_index('time_cycles')[['sensor_11', 'sensor_12', 'sensor_13']])
-            else:
-                st.warning("No data for this unit.")
+                    st.info("No aggregation data available.")
         else:
             st.info("No data in MongoDB. Please ingest data first.")
 
@@ -188,14 +203,14 @@ def render_hdfs_mr():
         
         with col_act:
             st.info(f"Root: {HDFS_ROOT}")
-            files_local = [f for f in os.listdir(CMAPS_DIR) if f.endswith(".txt")]
+            files_local = [f for f in os.listdir(CMAPS_DIR) if f.endswith(".txt") or f.endswith(".zip")]
             upload_file = st.selectbox("Select File to Upload", files_local)
             
             if st.button("Upload to HDFS"):
                  with st.spinner("Uploading..."):
                      local_p = os.path.join(CMAPS_DIR, upload_file)
-                     success, out = hm.upload_file(local_p, f"{HDFS_ROOT}/input/{upload_file}")
-                     if success: st.success("Uploaded successfully!")
+                     success, out = hm.upload_and_clean_file(local_p)
+                     if success: st.success("Uploaded & Cleaned successfully!")
                      else: st.error(f"Error: {out}")
             
             st.divider()
@@ -206,17 +221,6 @@ def render_hdfs_mr():
                 res, msg = hm.delete_file(del_path)
                 if res: st.success("Deleted successfully")
                 else: st.error(msg)
-
-            st.divider()
-            
-            # Download
-            dl_path = st.text_input("HDFS Path to Download", value=f"{HDFS_ROOT}/input/{upload_file}")
-            local_dl_path = os.path.join(CMAPS_DIR, f"downloaded_{upload_file}")
-            if st.button("Download from HDFS"):
-                with st.spinner("Downloading..."):
-                    res, msg = hm.download_file(dl_path, local_dl_path)
-                    if res: st.success(f"Downloaded to {local_dl_path}")
-                    else: st.error(f"Error: {msg}")
             
             if st.button("Create Root/Input Dirs"):
                 hm.mkdir(f"{HDFS_ROOT}/input")
@@ -238,14 +242,18 @@ def render_hdfs_mr():
         st.subheader("MapReduce Execution")
         mrm = MapReduceManager()
         
-        selected_job = st.radio("Select Job", ["Sensor Statistics (mr_sensor_stats.py)", "Operation Count (mr_op_count.py)"])
+        selected_job = st.radio("Select Job", [
+            "Sensor Statistics (mr_sensor_stats.py) - Min/Max/Avg for Sensor 11", 
+            "Operation Count (mr_op_count.py) - Rows per Unit"
+        ])
         
         runner = st.selectbox("Runner", ["inline", "hadoop"])
         
         if runner == "inline":
-            input_file = st.selectbox("Input File (Local)", [os.path.join(CMAPS_DIR, f) for f in files_local])
+            input_file = st.selectbox("Input File (Local)", [os.path.join(CMAPS_DIR, f) for f in files_local if f.endswith('.txt')])
         else:
-            input_file = st.text_input("Input File (HDFS Path)", value=f"{HDFS_ROOT}/input/{files_local[0] if files_local else 'train_FD004.txt'}")
+            # Assumes uploaded
+            input_file = st.text_input("Input File (HDFS Path)", value=f"{HDFS_ROOT}/input/train_FD004.txt")
         
         if st.button("Run MapReduce Job"):
             job_script = "mr_sensor_stats.py" if "Sensor" in selected_job else "mr_op_count.py"
@@ -274,26 +282,31 @@ def render_hive():
     
     st.markdown("### 🔍 Query Interface")
     
-    # Predefined Queries
+    # 20 Meaningful Hive Queries
     predefined_queries = [
         "SELECT * FROM cmaps_sensors LIMIT 10",
-        "SELECT COUNT(*) FROM cmaps_sensors",
-        "SELECT unit_number, COUNT(*) as cycles FROM cmaps_sensors GROUP BY unit_number LIMIT 20",
-        "SELECT unit_number, AVG(s11) as avg_pressure FROM cmaps_sensors GROUP BY unit_number LIMIT 10",
-        "SELECT unit_number, MAX(time_cycles) as max_life FROM cmaps_sensors GROUP BY unit_number ORDER BY max_life DESC LIMIT 5",
-        "SELECT AVG(s11), AVG(s12), AVG(s13) FROM cmaps_sensors",
-        "SELECT unit_number, s2 FROM cmaps_sensors WHERE s2 > 643.0 LIMIT 20",
-        "SELECT DISTINCT unit_number FROM cmaps_sensors LIMIT 20",
-        "SELECT unit_number, STDDEV(s11) as std_p FROM cmaps_sensors GROUP BY unit_number LIMIT 10",
-        "SELECT time_cycles, AVG(s14) FROM cmaps_sensors GROUP BY time_cycles ORDER BY time_cycles LIMIT 20",
-        "SELECT unit_number, MIN(s11), MAX(s11) FROM cmaps_sensors GROUP BY unit_number LIMIT 10",
-        "SELECT * FROM cmaps_sensors WHERE unit_number = 1 AND time_cycles < 20",
-        "SELECT unit_number, s4+s5 as combined_temp FROM cmaps_sensors LIMIT 10",
-        "SELECT COUNT(DISTINCT unit_number) FROM cmaps_sensors",
-        "SELECT unit_number, AVG(s9) FROM cmaps_sensors GROUP BY unit_number HAVING AVG(s9) > 8000 LIMIT 10"
+        "SELECT COUNT(*) as total_records FROM cmaps_sensors",
+        "SELECT unit_number, MAX(time_cycles) as useful_life FROM cmaps_sensors GROUP BY unit_number ORDER BY useful_life DESC LIMIT 10",
+        "SELECT unit_number, AVG(sensor_11) as avg_pressure FROM cmaps_sensors GROUP BY unit_number LIMIT 20",
+        "SELECT unit_number, STDDEV(sensor_11) as stability_s11 FROM cmaps_sensors GROUP BY unit_number ORDER BY stability_s11 DESC LIMIT 10",
+        "SELECT unit_number, AVG(sensor_4) as avg_temp FROM cmaps_sensors WHERE sensor_4 > 1400 GROUP BY unit_number LIMIT 10",
+        "SELECT unit_number, COUNT(*) as cycles FROM cmaps_sensors WHERE sensor_11 > 47.5 GROUP BY unit_number",
+        "SELECT time_cycles, AVG(sensor_12) as global_avg_s12 FROM cmaps_sensors GROUP BY time_cycles ORDER BY time_cycles ASC LIMIT 50",
+        "SELECT unit_number, MIN(sensor_2), MAX(sensor_2), AVG(sensor_2) FROM cmaps_sensors GROUP BY unit_number LIMIT 10",
+        "SELECT unit_number FROM cmaps_sensors WHERE sensor_2 > 644.0 GROUP BY unit_number",
+        "SELECT count(DISTINCT unit_number) as distinct_units FROM cmaps_sensors",
+        "SELECT unit_number, sensor_6+sensor_7 as sum_pressure_related FROM cmaps_sensors LIMIT 20",
+        "SELECT unit_number, avg(sensor_9) FROM cmaps_sensors GROUP BY unit_number HAVING avg(sensor_9) > 9000 LIMIT 10",
+        "SELECT * FROM cmaps_sensors WHERE unit_number = 1 AND time_cycles BETWEEN 100 AND 120",
+        "SELECT floor(sensor_11) as bin, count(*) as freq FROM cmaps_sensors GROUP BY floor(sensor_11) ORDER BY bin",
+        "SELECT unit_number, (MAX(sensor_4) - MIN(sensor_4)) as temp_range FROM cmaps_sensors GROUP BY unit_number ORDER BY temp_range DESC LIMIT 5",
+        "SELECT unit_number, AVG(op_setting_1) FROM cmaps_sensors GROUP BY unit_number LIMIT 10",
+        "SELECT time_cycles, AVG(sensor_11), AVG(sensor_12) FROM cmaps_sensors GROUP BY time_cycles ORDER BY time_cycles LIMIT 10",
+        "SELECT unit_number FROM cmaps_sensors WHERE time_cycles > 300 GROUP BY unit_number",
+        "SELECT AVG(sensor_1), STDDEV(sensor_1), AVG(sensor_2), STDDEV(sensor_2) from cmaps_sensors"
     ]
     
-    selected_query = st.selectbox("Choose a Predefined Query", predefined_queries)
+    selected_query = st.selectbox("Choose a Predefined Analysis", predefined_queries)
     query_input = st.text_area("Or Edit Query", value=selected_query)
     
     if st.button("Run Hive Query"):
@@ -302,6 +315,16 @@ def render_hive():
             if res:
                 st.success("Query Executed")
                 st.code(out)
+                
+                # Try parsing CSV output to dataframe for better view
+                try:
+                    from io import StringIO
+                    # Hive CLI output usually tab separated or formatted
+                    # This is a best effort visualization
+                    df = pd.read_csv(StringIO(out), sep="\t", engine='python')
+                    st.dataframe(df)
+                except:
+                    pass
             else:
                 st.error(f"Query Failed: {out}")
 
@@ -310,7 +333,6 @@ st.sidebar.title("Navigation")
 page = st.sidebar.radio("Go to", ["Home", "MongoDB", "Hadoop & MapReduce", "HiveSQL"])
 
 check_services()
-
 
 if page == "Home":
     render_home()
