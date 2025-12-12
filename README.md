@@ -1,29 +1,29 @@
 # Big Data Analytics Project - Preventative Maintenance (NASA CMaps)
 
-This project is a complete Big Data pipeline implementation for the NASA CMaps Turbofan Engine Degradation dataset. It integrates MongoDB, Hadoop (HDFS & MapReduce), and Hive into a unified Streamlit dashboard.
+This project is a complete **Big Data Analytics Platform** for the NASA C-MAPSS Turbofan Engine Degradation dataset. It integrates **HDFS**, **Hive**, **Machine Learning (Scikit-Learn)**, and **Streamlit** into a unified dashboard for predictive maintenance.
 
 ## 📌 Project Overview
 - **Data Source**: NASA CMaps (Turbofan Engine Degradation Simulation)
+- **Goal**: Predict the **Remaining Useful Life (RUL)** of jet engines.
 - **Tech Stack**:
-  - **Frontend**: Streamlit
-  - **Database**: MongoDB (NoSQL)
-  - **Big Data Storage**: HDFS (Hadoop Distributed File System)
-  - **Processing**: MapReduce (Python mrjob)
-  - **Warehousing**: Hive (SQL-like querying)
+  - **Frontend**: Streamlit (Data Management, Dashboard, Prediction Interface)
+  - **Storage**: HDFS (Hadoop Distributed File System) via Docker
+  - **Warehousing**: Hive (External Tables & SQL Querying)
+  - **Inference**: Random Forest Regressor (Scikit-Learn)
+  - **Processing**: Python-based Ingestion & MapReduce
 
 ## 📂 Directory Structure
 ```
 BDA_Project/
-├── CMaps/                  # Dataset folder
-├── backend/                # Backend logic managers
-│   ├── config.py           # Configuration (Path, URIs)
-│   ├── mongo_manager.py    # MongoDB operations
-│   ├── hdfs_manager.py     # HDFS wrappers
-│   ├── mapreduce_manager.py# Job submission logic
-│   └── hive_manager.py     # HiveQL execution logic
-├── mapreduce_jobs/         # MapReduce Python scripts
-│   ├── mr_op_count.py      # Job: Count ops per unit
-│   └── mr_sensor_stats.py  # Job: Sensor statistics
+├── CMAPSS/                 # Raw Dataset folder
+├── backend/                # Core logic
+│   ├── config.py           # Configuration
+│   ├── data_ingestion.py   # Data cleaning & HDFS upload script
+│   ├── hive_manager.py     # HiveQL execution & Table management
+│   ├── modal_service.py    # ML Training & Prediction logic
+│   ├── hdfs_manager.py     # HDFS CLI wrapper
+│   └── mongo_manager.py    # MongoDB (Legacy/Alternative store)
+├── models/                 # Serialized ML models (.pkl)
 ├── app.py                  # Main Streamlit Dashboard
 └── requirements.txt        # Python dependencies
 ```
@@ -31,25 +31,16 @@ BDA_Project/
 ## 🚀 Setup Instructions
 
 ### 1. Prerequisites
-- **Python 3.8+**
-- **MongoDB**: Installed and running locally on default port (27017).
-- **Hadoop**: Installed and configured (commands `hdfs`, `hadoop` must be in PATH).
-- **Hive**: Installed and configured (command `hive` must be in PATH).
-- *(Optional but Recommended)*: Docker environment for Hadoop/Hive if native Windows installation is not available.
+- **Python 3.9+**
+- **Docker Desktop** (Recommended for managing Hadoop/Hive containers).
+- **Hadoop/Hive Containers**: Ensure your container names match `backend/config.py` (default: `namenode`, `hive-server`).
 
 ### 2. Installation
 1. Install Python dependencies:
    ```bash
    pip install -r requirements.txt
-   pip install setuptools  # Required for mrjob on Python 3.12+
    ```
-
-2. Start MongoDB:
-   - Ensure `mongod` is running.
-
-3. Start Hadoop & Hive:
-   - Ensure HDFS NameNode and DataNodes are running (`start-dfs.sh` or via Docker).
-   - Ensure Hive Server is running.
+2. Start your Docker Environment (HDFS & Hive).
 
 ### 3. Running the Application
 Run the Streamlit app:
@@ -59,26 +50,25 @@ streamlit run app.py
 
 ## 🛠 Features & Usage
 
-### 1. MongoDB Analytics
-- Go to the **MongoDB** tab.
-- **Ingest Data**: Select a CMaps file (e.g., `train_FD004.txt`) and click "Ingest". This loads data into MongoDB.
-- **Dashboard**: View sensor correlations and unit trends.
+### 1. Data Pipeline Management
+- **Ingestion**: Automatically scans `CMAPSS/` folder, cleans variable-space CSVs, adds `dataset_id`, and uploads to HDFS (`/bda_project/processed`).
+- **Hive Integration**: Initializes external tables (`cmapss_train`, `cmapss_test`, `cmapss_rul`) mapped to HDFS directories.
 
-### 2. Hadoop (HDFS & MapReduce)
-- Go to **Hadoop & MapReduce** tab.
-- **HDFS**: Upload files from local `CMaps` to HDFS. Manage files (List/Delete).
-- **MapReduce**:
-  - Select a job (e.g., Sensor Statistics).
-  - Choose "Runner":
-    - **Inline**: Runs locally (simulated) - requires no Hadoop cluster. Good for testing logic.
-    - **Hadoop**: Submits actual job to the cluster - requires running Hadoop environment.
+### 2. Fleet Dashboard
+- **Visualizations**: Interactive plots using Plotly.
+- **Analysis**: Drill down into specific Engine Units to see sensor trends (e.g., Pressure, Temperature vs Cycles).
 
-### 3. Hive Data Warehouse
-- Go to **HiveSQL** tab.
-- **Initialize**: Click "Initialize Table" to create the external table `cmaps_sensors` pointing to HDFS data.
-- **Query**: Write and execute SQL queries (e.g., `SELECT unit_number, AVG(s11) FROM cmaps_sensors GROUP BY unit_number`).
+### 3. Predictive Maintenance (AI)
+- **Training**: Train a **Random Forest Regressor** on the historical `train` dataset.
+- **Inference**: Predict RUL for engines in the `test` dataset.
+- **Metrics**: Compare predicted RUL vs Ground Truth (where available).
 
-## ⚠️ Troubleshooting
-- **Missing 'pipes' module**: The code includes a shim for Python 3.13+. If issues persist, ensure `setuptools` is installed.
-- **Hadoop not found**: If running on Windows without Hadoop, use the "Inline" runner for MapReduce and rely on MongoDB for analytics.
-- **Connection Errors**: Check `backend/config.py` to adjust URIs or Docker settings if using containers.
+### 4. Hive Data Warehouse
+- execute ad-hoc SQL queries like:
+  ```sql
+  SELECT unit_number, AVG(sensor_11) FROM cmapss_train GROUP BY unit_number
+  ```
+
+## ⚠️ Notes
+- The project assumes a Dockerized Hadoop environment. If using a native installation, set `USE_DOCKER = False` in `backend/config.py`.
+- First run requires clicking **"Run Full Ingestion Pipeline"** in the app to populate HDFS.

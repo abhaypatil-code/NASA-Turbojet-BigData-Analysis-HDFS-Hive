@@ -1,35 +1,37 @@
 # 🏗️ System Architecture - Big Data Analytics Platform
 
-This document describes the architectural design of the Big Data Analytics Platform developed for the NASA C-MAPSS (Turbofan Engine Degradation) dataset. The system integrates multiple big data technologies into a unified dashboard for ingestion, storage, processing, and analysis.
+This document describes the architectural design of the Big Data Analytics Platform developed for the NASA C-MAPSS dataset. The system follows a **Modern Data Stack** pattern, leveraging distributed storage, SQL warehousing, and Machine Learning services.
 
 ## 🌟 High-Level Overview
 
-The platform follows a modular **Layered Architecture**, separating the presentation layer (frontend) from the data processing and storage layers (backend). It leverages a "Polyglot Persistence" approach, using **MongoDB** for flexible, document-oriented analytics and **HDFS** for distributed file storage, with **Hive** providing a structured SQL interface over the raw data.
+The platform uses a **Layered Architecture**:
+1.  **Presentation Layer**: Streamlit Dashboard for user interaction.
+2.  **Application Layer**: Python Backend Managers for logic orchestration.
+3.  **ML Layer**: Scikit-Learn Model Service for training and inference.
+4.  **Data Layer**: HDFS (Storage) and Hive (Warehousing).
 
 ### 🏛️ Architecture Diagram
 
 ```mermaid
 graph TD
-    User[User / Analyst] -->|Interacts| UI[Streamlit Frontend Dashboard]
+    User[User] -->|Browser| UI[Streamlit App]
     
-    subgraph Application_Layer
-        UI -->|Calls| Backend[Backend Managers]
-        Backend -->|Ingest/Query| MongoMgr[MongoDB Manager]
-        Backend -->|Upload/Manage| HDFSMgr[HDFS Manager]
-        Backend -->|Submit Jobs| MRMgr[MapReduce Manager]
-        Backend -->|Execute SQL| HiveMgr[Hive Manager]
+    subgraph Streamlit_Backend
+        UI -->|Trigger| Ingest[Data Ingestion]
+        UI -->|Query| HiveMgr[Hive Manager]
+        UI -->|Predict| ML[Model Service]
     end
     
-    subgraph Data_Storage_Processing_Layer
-        MongoMgr -->|Read/Write| MongoDB[(MongoDB Container/Srv)]
-        HDFSMgr -->|Put/Get| HDFS[(Hadoop HDFS)]
-        
-        MRMgr -->|Spawns| MRJob[MapReduce Job]
-        MRJob -->|Reads/Writes| HDFS
-        
-        HiveMgr -->|Query via MapReduce| Hive[Hive Server]
-        Hive -->|Metastore Lookup| HiveMeta[Metastore]
-        Hive -->|Data Access| HDFS
+    subgraph Data_Infrastructure
+        Ingest -->|Clean & Upload| HDFS[(Hadoop HDFS)]
+        HiveMgr -->|Schema-on-Read| HDFS
+        ML -->|Read CSV| HDFS
+        ML -->|Save Model| LocalDisk[Local Models Directory]
+    end
+    
+    subgraph Warehousing
+        HiveMgr -->|SQL Query| HiveServer[Hive Service]
+        HiveServer -->|Metastore| HDFS
     end
 ```
 
@@ -38,109 +40,52 @@ graph TD
 ## 🧩 Component Details
 
 ### 1. Presentation Layer (Frontend)
-- **Technology**: [Streamlit](https://streamlit.io/) (Python)
-- **Responsibility**: 
-  - Provides an interactive web interface.
-  - Handles user inputs for file uploads, job selection, and query execution.
-  - Visualizes results using extensive charting (Line charts, Correlation matrices).
-- **Key Modules**:
-  - `app.py`: Entry point and UI layout manager.
+-   **Technology**: Streamlit
+-   **Role**: Unified interface for Data Engineers (Pipeline management) and Analysts (Dashboards).
+-   **Key Tabs**:
+    -   **Data Pipeline**: Triggering ingestion jobs and Hive table creation.
+    -   **Fleet Dashboard**: Visualizing sensor health.
+    -   **Predictive Maintenance**: ML Model interaction.
 
-### 2. Application Logic Layer (Backend)
-- **Technology**: Python 3.8+
-- **Responsibility**: Abstraction layer acting as a bridge between the UI and low-level Big Data services.
-- **Key Modules** (`backend/`):
-  - `mongo_manager.py`: Handles connection pooling, bulk ingestion, and Aggregation Pipelines for MongoDB.
-  - `hdfs_manager.py`: Wraps Hadoop CLI logic (subprocess calls) to perform file operations (put, get, ls, rm).
-  - `mapreduce_manager.py`: Orchestrates the execution of Python MapReduce scripts using `mrjob` or direct execution.
-  - `hive_manager.py`: Manages Hive external table creation and query execution via CLI.
+### 2. Machine Learning Layer
+-   **Service**: `backend/model_service.py`
+-   **Algorithm**: Random Forest Regressor.
+-   **Workflow**:
+    1.  **Training**: Downloads processed CSVs from HDFS -> Calculates RUL -> Trains Model -> Serializes to `.pkl`.
+    2.  **Inference**: Loads Model -> Downloads Test Data -> Generates RUL Predictions.
 
 ### 3. Data Storage & Processing Layer
 
-#### A. MongoDB (NoSQL Store)
-- **Role**: Operational Analytics Store.
-- **Usage**:
-  - Stores parsed sensor data as JSON documents.
-  - Performs real-time aggregation (e.g., Average sensor readings per unit).
-  - Powering the "Analytics Dashboard" for fast lookups.
-- **Data Model**:
-  ```json
-  {
-    "unit_number": 1,
-    "time_cycles": 1,
-    "op_setting_1": 42.00,
-    "sensor_11": 47.2,
-    ...
-  }
-  ```
+#### A. Hadoop HDFS (Data Lake)
+-   **Role**: Primary storage for processed CSV chips.
+-   **Structure**:
+    -   `/bda_project/processed/train/`
+    -   `/bda_project/processed/test/`
+    -   `/bda_project/processed/rul/`
 
-#### B. Hadoop HDFS (Distributed Storage)
-- **Role**: Data Lake / Raw Storage.
-- **Usage**:
-  - Stores the original raw text files (`train_FD004.txt`).
-  - Acts as the source of truth for MapReduce jobs and Hive tables.
-- **Structure**: `/user/hadoop/input/` (default ingestion path).
-
-#### C. MapReduce (Batch Processing)
-- **Role**: Computational Engine.
-- **Technology**: Hadoop MapReduce framework (via `mrjob`).
-- **Jobs**:
-  - **Sensor Statistics**: Calculates Min, Max, Avg for specific sensors across the dataset.
-  - **Operation Counts**: Computes total operational cycles per engine unit.
-
-#### D. Hive (Data Warehousing)
-- **Role**: Structured SQL Interface.
-- **Usage**: allows running SQL-like queries on the unstructured data in HDFS.
-- **Mechanic**: Uses `EXTERNAL TABLES` mapped to the HDFS directory. Data is not moved; Hive applies the schema on-read.
+#### B. Hive (Data Warehouse)
+-   **Role**: SQL Interface.
+-   **Tables**: `cmapss_train`, `cmapss_test`, `cmapss_rul`.
+-   **Type**: External Tables (Data resides in HDFS).
 
 ---
 
 ## 🔄 Data Pipeline Flows
 
-### Flow 1: Ingestion & Fast Analytics
-1. **User** selects a local dataset via Streamlit.
-2. **MongoManager** parses the file into Pandas DataFrame.
-3. **MongoManager** performs bulk insert into MongoDB collection `sensors`.
-4. **Streamlit** triggers Aggregation Pipeline to update dashboards instantly.
+### Flow 1: Ingestion Pipeline
+1.  **Scanner**: Detects raw files in `CMAPSS/`.
+2.  **Cleaner**: Pandas reads variable-whitespace text files and normalizes to CSV.
+3.  **Tagger**: Appends `dataset_id` (e.g., "FD001").
+4.  **Uploader**: HDFS Manager puts files into partitioned HDFS directories.
 
-### Flow 2: Batch Processing (MapReduce)
-1. **User** uploads raw file to HDFS via **HDFSManager**.
-2. **User** selects a job (e.g., Sensor Stats) and clicks run.
-3. **MapReduceManager** submits the Python script to the Hadoop cluster (or simulate locally).
-4. **Script** reads from HDFS, processes (Map -> Shuffle -> Reduce), and outputs results.
-5. **Streamlit** captures `stdout`/`stderr` and displays the job report.
+### Flow 2: ML Training
+1.  **Request**: User clicks "Train Model (FD001)".
+2.  **Fetch**: Backend downloads `/processed/train/FD001.csv` from HDFS.
+3.  **Feature Eng**: Calculates Target `RUL = Max(Time) - Current(Time)`.
+4.  **Fit**: Random Forest trains on Sensors 1-21.
+5.  **Save**: Model saved locally as `models/rul_model_FD001.pkl`.
 
-### Flow 3: Ad-Hoc Querying (Hive)
-1. **User** initializes the Hive Table (schema applied to HDFS path).
-2. **User** inputs a HiveQL query (e.g., `SELECT AVG(s11) FROM cmaps_sensors`).
-3. **HiveManager** wraps the query in a shell command passed to the Hive Service.
-4. **Hive** compiles the query into MapReduce tasks (Tez/MR), executes on HDFS data, and returns rows.
-5. **Streamlit** formats the result as a table.
-
----
-
-## 🛠️ Technology Stack Summary
-
-| Component | Technology | Version / Note |
-|:---|:---|:---|
-| **Language** | Python | 3.8+ |
-| **App Framework** | Streamlit | 1.30+ |
-| **NoSQL DB** | MongoDB | Community Edition 6.0+ |
-| **Distributed FS** | HDFS | Hadoop 3.x |
-| **Batch Engine** | MapReduce | Hadoop Streaming / mrjob |
-| **DW Interface** | Apache Hive | 3.x |
-| **Driver / Libs** | PyMongo, Pandas | `pymongo`, `pandas` |
-
-## 📐 Design Decisions & Trade-offs
-
-1. **Subprocess Wrapper vs Native Clients**:
-   - *Decision*: Used `subprocess` to call `hdfs` and `hive` CLI commands instead of using native Python libraries like `pyhive` or `hdfs` library connection modes.
-   - *Reasoning*: Ensures compatibility with various local setups (Docker, Native Windows Hadoop) where libraries might have strict binding requirements (SASL, Thrift versions). It mimics how a user would interact with the terminal.
-
-2. **External Tables in Hive**:
-   - *Decision*: Used `EXTERNAL TABLE` instead of `MANAGED TABLE`.
-   - *Reasoning*: Dropping the table in Hive should not delete the raw data in HDFS. This allows MongoDB and MapReduce to continue accessing the same file source without risk.
-
-3. **Hybrid Storage**:
-   - *Decision*: Storing data in both MongoDB and HDFS.
-   - *Reasoning*: MongoDB offers superior performance for interactive dashboards (milliseconds latency), while HDFS provides the necessary infrastructure for scalable, batch-oriented heavy lifting (MapReduce).
+### Flow 3: Fleet Dashboard
+1.  User selects a Unit.
+2.  Backend pulls relevant data chunk from HDFS.
+3.  Plotly renders interactive time-series charts.
