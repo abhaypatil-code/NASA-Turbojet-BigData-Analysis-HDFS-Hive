@@ -59,34 +59,28 @@ def test_hdfs_clean_upload():
     if os.path.exists(dummy_path):
         os.remove(dummy_path)
 
-def test_mapreduce_inline():
-    print("\n--- Testing MapReduce (Inline) ---")
-    mrm = MapReduceManager()
+def test_mapreduce_yarn():
+    print("\n--- Testing MapReduce (YARN Cluster) ---")
+    print("NOTE: This test requires Docker containers (namenode, resourcemanager, nodemanager) to be running.")
+    print("MapReduce jobs now execute exclusively on Hadoop YARN cluster.")
     
-    # Create a dummy CSV for MR input
-    dummy_csv = "test_mr.csv"
-    with open(dummy_csv, "w") as f:
-        # Create header-like 26 cols
-        # Unit Time Op1 Op2 Op3 S1..S21
-        # S11 is index 15. Let's put 50.0 there.
-        row = ["1", "1", "0", "0", "0"] + ["0"]*21
-        row[15] = "50.0" 
-        f.write(",".join(row) + "\n")
-        row[15] = "60.0"
-        f.write(",".join(row) + "\n")
-        
-    ok, out = mrm.run_job("mr_sensor_stats.py", dummy_csv, runner="inline")
-    print(f"Job Result:\n{out}")
+    # This test is commented out as it requires:
+    # 1. Docker containers running (namenode, resourcemanager, nodemanager)
+    # 2. Data ingested to HDFS
+    # 3. YARN cluster properly configured
     
-    if "avg" in str(out) and "55.0" in str(out):
-        print("SUCCESS: MapReduce calculated average correctly (55.0).")
-    else:
-        print("FAILURE: MapReduce output unexpected.")
-
-    if os.path.exists(dummy_csv):
-        os.remove(dummy_csv)
+    print("To manually test MapReduce:")
+    print("  1. Ensure Docker containers are running: docker ps")
+    print("  2. Run: streamlit run app.py")
+    print("  3. Navigate to MapReduce Jobs tab")
+    print("  4. Select a job and provide HDFS input path")
+    print("  5. Click 'Run MapReduce Job on YARN Cluster'")
+    
+    # mrm = MapReduceManager()
+    # ok, out = mrm.run_job("mr_sensor_stats.py", "/bda_project/processed/train/FD001.csv", runner="hadoop")
+    # print(f"Job Result:\n{out}")
 
 if __name__ == "__main__":
     test_mongo()
     test_hdfs_clean_upload()
-    test_mapreduce_inline()
+    test_mapreduce_yarn()

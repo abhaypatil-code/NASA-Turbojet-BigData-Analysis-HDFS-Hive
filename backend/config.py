@@ -139,41 +139,27 @@ CRITICAL_SENSORS = ["sensor_2", "sensor_3", "sensor_4", "sensor_7", "sensor_8",
                     "sensor_9", "sensor_11", "sensor_12", "sensor_13", "sensor_14", "sensor_15"]
 
 # ==================== MAPREDUCE CONFIGURATION ====================
+# Simplified to only 3 reliable MapReduce jobs for Hadoop YARN cluster
 MAPREDUCE_CONFIG = {
     "jobs": {
+        "op_count": {
+            "script": "mr_op_count.py",
+            "description": "Count records per engine unit (Simple Counting)",
+            "output_dir": f"{HDFS_ROOT}/mapreduce_output/op_counts"
+        },
+        "sensor_stats": {
+            "script": "mr_sensor_stats.py",
+            "description": "Calculate min/max/avg sensor statistics",
+            "output_dir": f"{HDFS_ROOT}/mapreduce_output/sensor_stats"
+        },
         "cycle_counter": {
             "script": "mr_cycle_counter.py",
             "description": "Count total cycles per engine unit",
             "output_dir": f"{HDFS_ROOT}/mapreduce_output/cycle_counts"
-        },
-        "feature_summary": {
-            "script": "mr_feature_summary.py",
-            "description": "Calculate statistics for all 26 features",
-            "output_dir": f"{HDFS_ROOT}/mapreduce_output/feature_stats"
-        },
-        "degradation_metrics": {
-            "script": "mr_degradation_metrics.py",
-            "description": "Compute engine degradation metrics",
-            "output_dir": f"{HDFS_ROOT}/mapreduce_output/degradation"
-        },
-        "sensor_stats": {
-            "script": "mr_sensor_stats.py",
-            "description": "Calculate sensor statistics (existing)",
-            "output_dir": f"{HDFS_ROOT}/mapreduce_output/sensor_stats"
-        },
-        "op_count": {
-            "script": "mr_op_count.py",
-            "description": "Count records per unit (existing)",
-            "output_dir": f"{HDFS_ROOT}/mapreduce_output/op_counts"
-        },
-        "rul_avg": {
-            "script": "mr_rul_avg.py",
-            "description": "Average RUL by operational setting (existing)",
-            "output_dir": f"{HDFS_ROOT}/mapreduce_output/rul_averages"
         }
     },
-    "runners": ["inline", "local", "hadoop"],
-    "default_runner": "inline"
+    "runners": ["hadoop"],
+    "default_runner": "hadoop"
 }
 
 # ==================== HIVE CONFIGURATION ====================

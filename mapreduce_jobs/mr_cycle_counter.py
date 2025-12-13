@@ -31,7 +31,7 @@ class MRCycleCounter(MRJob):
         """
         Map phase: Extract unit number and cycle count
         
-        Input: CSV line with engine data
+        Input: Space-separated or comma-separated line with engine data
         Output: (unit_number, cycle_count)
         """
         # Skip empty lines
@@ -39,8 +39,13 @@ class MRCycleCounter(MRJob):
             return
         
         try:
-            # Parse CSV (assuming comma-separated)
-            parts = line.strip().split(',')
+            # Parse data - handle both space-separated (raw CMAPSS) and comma-separated
+            # Using split() without argument handles any whitespace
+            if ',' in line:
+                parts = line.strip().split(',')
+            else:
+                # Space-separated (original CMAPSS format)
+                parts = line.strip().split()
             
             if len(parts) < 2:
                 return

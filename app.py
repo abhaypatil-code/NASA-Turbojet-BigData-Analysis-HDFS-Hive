@@ -716,41 +716,149 @@ with tab7:
     st.info(f"**Job Description:** {job_info['description']}")
     st.caption(f"Output Directory: `{job_info['output_dir']}`")
     
-    # Execution mode
-    runner = st.radio("Execution Mode", MAPREDUCE_CONFIG['runners'], horizontal=True,
-                     help="inline=local simulation (safest), local=single-node hadoop, hadoop=cluster",
-                     index=0) # Default to inline
+    # YARN Execution Info
+    st.success("🐳 Jobs will run on Hadoop YARN cluster via Docker NameNode container")
     
-    if runner == "hadoop":
-        if os.name == 'nt' and not USE_DOCKER:
-            st.warning("⚠️ 'hadoop' runner on Windows requires Hadoop binaries in PATH. Enable Docker in config or use 'inline'.")
-        elif USE_DOCKER:
-            st.info("🐳 Jobs will run inside the Docker NameNode container.")
-
-    # Input file selection
-    if runner == "inline":
-        try:
-            local_files = [f for f in os.listdir(CMAPS_DIR) if f.startswith(("train_", "test_"))]
-            input_file = st.selectbox("Input File (Local)", [os.path.join(CMAPS_DIR, f) for f in local_files])
-        except:
-            input_file = st.text_input("Input File Path", value=os.path.join(CMAPS_DIR, "train_FD001.txt"))
-    else:
-        input_file = st.text_input("Input File (HDFS Path)", value="/bda_project/processed/train/FD001.csv")
+    # Input file selection (HDFS only)
+    input_file = st.text_input("Input File (HDFS Path)", value="/bda_project/processed/train/FD001.csv",
+                               help="Specify the full HDFS path to your input data file")
     
-    if st.button("▶️ Run MapReduce Job", type="primary", use_container_width=True):
-        with st.status(f"Running {job_info['script']} ({runner})...", expanded=True) as status:
-            st.write("🚀 Initializing job...")
+    if st.button("▶️ Run MapReduce Job on YARN Cluster", type="primary", use_container_width=True):
+        with st.status(f"Running {job_info['script']} on Hadoop YARN...", expanded=True) as status:
+            st.write("🚀 Initializing job on YARN cluster...")
             script_name = job_info['script']
-            success, output = svc.mr.run_job(script_name, input_file, runner=runner)
+            success, output = svc.mr.run_job(script_name, input_file, runner="hadoop")
             
             if success:
                 status.update(label="Job Completed Successfully!", state="complete", expanded=False)
-                st.success("MapReduce job completed!")
-                st.subheader("📊 Job Output")
-                st.code(output, language="text")
+                st.success("✅ MapReduce job completed successfully!")
+                
+                st.subheader("📊 Job Results")
+                
+                # Parse and display output in a beautiful format
+                try:
+                    # Parse the tab-separated output with JSON values
+                    parsed_results = []
+                    for line in output.strip().split('\n'):
+                        if line.strip():
+                            parts = line.split('\t')
+                            if len(parts) >= 2:
+                                key = parts[0].strip().strip('"')
+                                try:
+                                    value = json.loads(parts[1])
+                                    if isinstance(value, dict):
+                                        # Only include results with avg, min, max, count (sensor stats format)
+                                        if all(k in value for k in ['avg', 'min', 'max', 'count']):
+                                            parsed_results.append({"Key": key, **value})
+                                except:
+                                    pass  # Skip non-JSON or incomplete entries
+                    
+                    if parsed_results:
+                        df_results = pd.DataFrame(parsed_results)
+                        
+                        # Display summary metrics
+                        st.markdown("### 📈 Summary Metrics")
+                        metric_cols = st.columns(min(4, len(parsed_results)))
+                        for idx, row in enumerate(parsed_results[:4]):
+                            with metric_cols[idx % 4]:
+                                key_name = row.get("Key", f"Item {idx+1}")
+                                if "count" in row:
+                                    st.metric(key_name, f"{row['count']:,} records")
+                                elif "avg" in row:
+                                    st.metric(key_name, f"Avg: {row['avg']:.2f}")
+                                elif "Value" in row:
+                                    st.metric(key_name, row["Value"])
+                        
+                        st.markdown("---")
+                        
+                        # Display styled data table
+                        st.markdown("### 📋 Detailed Results")
+                        
+                        # Style the dataframe
+                        if "min" in df_results.columns and "max" in df_results.columns:
+                            # Sensor stats format - show as styled table
+                            display_df = df_results.copy()
+                            for col in ["min", "max", "avg"]:
+                                if col in display_df.columns:
+                                    display_df[col] = display_df[col].apply(lambda x: f"{x:.4f}" if isinstance(x, (int, float)) else x)
+                            if "count" in display_df.columns:
+                                display_df["count"] = display_df["count"].apply(lambda x: f"{x:,}" if isinstance(x, (int, float)) else x)
+                            
+                            st.dataframe(
+                                display_df,
+                                use_container_width=True,
+                                hide_index=True,
+                                column_config={
+                                    "Key": st.column_config.TextColumn("📌 Sensor/Feature", width="medium"),
+                                    "min": st.column_config.TextColumn("⬇️ Min", width="small"),
+                                    "max": st.column_config.TextColumn("⬆️ Max", width="small"),
+                                    "avg": st.column_config.TextColumn("📊 Average", width="small"),
+                                    "count": st.column_config.TextColumn("🔢 Count", width="small"),
+                                }
+                            )
+                            
+                            # Create visualization
+                            st.markdown("### 📊 Visual Analysis")
+                            if "avg" in df_results.columns:
+                                fig = px.bar(
+                                    df_results.head(15), 
+                                    x="Key", 
+                                    y="avg",
+                                    title="Average Values by Feature",
+                                    color="avg",
+                                    color_continuous_scale="Viridis"
+                                )
+                                fig.update_layout(
+                                    template="plotly_dark",
+                                    xaxis_tickangle=-45,
+                                    height=400
+                                )
+                                st.plotly_chart(fig, use_container_width=True)
+                                
+                                # Min/Max range chart
+                                if "min" in df_results.columns and "max" in df_results.columns:
+                                    fig2 = go.Figure()
+                                    fig2.add_trace(go.Bar(
+                                        name='Min', 
+                                        x=df_results['Key'].head(15), 
+                                        y=df_results['min'].head(15),
+                                        marker_color='#00bcd4'
+                                    ))
+                                    fig2.add_trace(go.Bar(
+                                        name='Max', 
+                                        x=df_results['Key'].head(15), 
+                                        y=df_results['max'].head(15),
+                                        marker_color='#ff5722'
+                                    ))
+                                    fig2.update_layout(
+                                        title="Min/Max Range Comparison",
+                                        barmode='group',
+                                        template="plotly_dark",
+                                        xaxis_tickangle=-45,
+                                        height=400
+                                    )
+                                    st.plotly_chart(fig2, use_container_width=True)
+                        else:
+                            # Generic format
+                            st.dataframe(df_results, use_container_width=True, hide_index=True)
+                        
+                        # Show record count
+                        st.markdown(f"**Total Results:** {len(parsed_results)} items processed")
+                    else:
+                        st.info("No structured data to display")
+                        st.code(output, language="text")
+                        
+                except Exception as parse_error:
+                    st.warning(f"Could not parse structured output: {parse_error}")
+                    st.code(output, language="text")
+                
+                # Expandable raw output
+                with st.expander("🔍 View Raw Output"):
+                    st.code(output, language="text")
+                    
             else:
                 status.update(label="Job Failed", state="error", expanded=True)
-                st.error("Job failed")
+                st.error("❌ Job failed")
                 st.code(output, language="text")
 
 # ==================== TAB 8: RUL PREDICTION ====================

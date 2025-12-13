@@ -1,8 +1,15 @@
 # NASA Turbojet Predictive Maintenance Platform
 
+[![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://python.org)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.28+-red.svg)](https://streamlit.io)
+[![Docker](https://img.shields.io/badge/Docker-Compose-blue.svg)](https://docker.com)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
 ## 🚀 Production-Quality Big Data Analytics Platform for C-MAPSS Turbofan Engine Degradation
 
-This is a comprehensive **Big Data Analytics Platform** integrating **MongoDB**, **Hadoop/HDFS**, **Apache Hive**, **MapReduce**, and **Machine Learning** for predictive maintenance of NASA's C-MAPSS turbofan engines.
+A comprehensive **Big Data Analytics Platform** integrating **MongoDB**, **Hadoop/HDFS**, **Apache Hive**, **MapReduce on YARN**, and **Machine Learning** for predictive maintenance of NASA's C-MAPSS turbofan engines.
+
+![Platform Architecture](turbofan_architecture.png)
 
 ---
 
@@ -10,9 +17,9 @@ This is a comprehensive **Big Data Analytics Platform** integrating **MongoDB**,
 
 - **Data Source**: NASA C-MAPSS (Commercial Modular Aero-Propulsion System Simulation) Turbofan Engine Degradation Dataset
 - **Objective**: Predict **Remaining Useful Life (RUL)** of jet engines using big data technologies
-- **Academic Focus**: 
-  - **MongoDB Integration (15 marks)**: Optimized schemas, batch ingestion, CRUD operations, advanced aggregations
-  - **Hadoop/HDFS/MapReduce (10 marks)**: Complete file management, 6 MapReduce jobs
+- **Key Features**: 
+  - **MongoDB Integration**: Optimized schemas, batch ingestion, CRUD operations, advanced aggregations
+  - **Hadoop/HDFS/MapReduce**: Complete file management, MapReduce jobs on YARN cluster
   - **HiveQL Queries**: 20 comprehensive analytical queries demonstrating data warehousing capabilities
   - **ML Pipeline**: Random Forest Regressor for RUL prediction with feature engineering
 
@@ -34,19 +41,16 @@ This is a comprehensive **Big Data Analytics Platform** integrating **MongoDB**,
 ### **Data Warehousing**
 - **Hadoop HDFS**: Distributed file storage
   - Directory structure: `/bda_project/processed/{train|test|rul}/`
-  - Docker-based deployment
+  - Docker-based deployment with NameNode and DataNode
 - **Apache Hive**: SQL interface over HDFS
   - External tables: `cmapss_train`, `cmapss_test`, `cmapss_rul`
   - 20 pre-built analytical queries
 
 ### **Distributed Processing**
-- **MapReduce**: 6 jobs for large-scale analytics
-  - Cycle counting per engine
-  - Feature statistics (26 features)
-  - Degradation metrics
-  - Sensor statistics
-  - Operational counting
-  - RUL averaging
+- **MapReduce on YARN**: Jobs execute on Hadoop YARN cluster
+  - Cycle Counter: Count cycles per engine
+  - Feature Summary: Statistical summary of all 26 features
+  - RUL Averaging: Average RUL calculations
 
 ### **Machine Learning**
 - **Scikit-Learn**: Random Forest Regressor
@@ -69,95 +73,72 @@ NASATurbojet-BigDataAnalysis-using-HDFS-and-Hive/
 │   ├── mongo_manager.py             # MongoDB operations (CRUD + aggregations)
 │   ├── hdfs_manager.py              # HDFS file management
 │   ├── hive_manager.py              # Hive tables + 20 HiveQL queries
-│   ├── mapreduce_manager.py         # MapReduce job execution
+│   ├── mapreduce_manager.py         # MapReduce job execution on YARN
 │   ├── data_ingestion.py            # ETL pipeline
 │   └── model_service.py             # ML training & inference
 ├── mapreduce_jobs/                  # MapReduce job scripts
-│   ├── mr_cycle_counter.py
-│   ├── mr_feature_summary.py
-│   ├── mr_degradation_metrics.py
-│   ├── mr_sensor_stats.py
-│   ├── mr_op_count.py
-│   └── mr_rul_avg.py
+│   ├── mr_cycle_counter.py          # Count cycles per engine
+│   ├── mr_feature_summary.py        # Feature statistics
+│   └── mr_rul_avg.py                # RUL averaging
 ├── models/                          # Serialized ML models
 ├── app.py                           # Main Streamlit application
 ├── requirements.txt                 # Python dependencies
-├── docker-compose.yml               # Hadoop/Hive containers
+├── docker-compose.yml               # Hadoop/Hive/MongoDB containers
 ├── README.md                        # This file
 ├── SETUP_GUIDE.md                   # Detailed setup instructions
+├── HIVEQL_QUERIES.md                # HiveQL query documentation
 └── architecture.md                  # System architecture documentation
 ```
-
 
 ---
 
 ## 🎯 Features & Capabilities
 
-### **1. Data Ingestion Pipeline (Tab 2)**
+### **1. Data Ingestion Pipeline**
 - Automatic scanning of CMAPSS directory
 - Data cleaning (variable whitespace → CSV)
 - Metadata injection (dataset_id, dataset_type)
 - Dual upload: MongoDB + HDFS
 - Progress tracking and validation
 
-### **2. Data Exploration (Tab 3)**
+### **2. Data Exploration**
 - Interactive sensor trend visualization
 - Statistical summaries (min, max, mean, std)
 - Correlation heatmaps
 - Individual engine unit deep dive
 - Support for all 4 datasets (FD001-FD004)
 
-### **3. MongoDB Analytics (Tab 4)**
+### **3. MongoDB Analytics**
 - **Health Scores**: Multi-sensor health index calculation
 - **Degradation Analysis**: Early vs late cycle comparison
 - **Condition-Based Metrics**: Performance by operating conditions (FD002, FD004)
 - **Real-time Aggregations**: Sub-second query response
 
-### **4. HDFS Management (Tab 5)**
+### **4. HDFS Management**
 - File browser with metadata display
 - Upload/download operations
 - Directory management (create, delete)
 - Storage usage statistics
-- File validation
 
-### **5. HiveQL Queries (Tab 6)** ⭐
-**20 Pre-built Analytical Queries:**
-1. Filter by Dataset
-2. Group by Engine Unit
-3. Average Sensors per Engine
-4. Top Engines by Sensor Variability
-5. Degradation Rate Analysis
-6. Operational Conditions Aggregation
-7. Similar Engine Profiles
-8. Sensor Correlation Analysis
-9. Anomalous Readings Detection
-10. RUL Statistics
-11. Time-Windowed Aggregations
-12. Cumulative Sensor Drift
-13. Engines Approaching Failure
-14. Cross-Dataset Comparison
-15. Engine Efficiency Metrics
-16. Sensor Criticality Ranking
-17. Train-Test Join Analysis
-18. ML Feature Extraction
-19. Dashboard Summary View
-20. Comprehensive Performance Report
+### **5. HiveQL Queries**
+20 Pre-built Analytical Queries including:
+- Filtering & grouping operations
+- Statistical aggregations
+- Window functions
+- Joins and anomaly detection
+- Feature engineering queries
 
-### **6. MapReduce Jobs (Tab 7)**
-- Cycle counter
-- Feature summary (26 features)
-- Degradation metrics
-- Sensor statistics
-- Operational counting
-- RUL averaging
-- Execution modes: inline, local, hadoop
+### **6. MapReduce Jobs (YARN)**
+Execute distributed MapReduce jobs on the Hadoop YARN cluster:
+- **Cycle Counter**: Count operational cycles per engine
+- **Feature Summary**: Statistical summary for all sensors
+- **RUL Averaging**: Calculate average RUL values
 
-### **7. RUL Prediction (Tab 8)**
+### **7. RUL Prediction**
 - Model training with progress tracking
 - Hyperparameter configuration
 - Real-time inference
 - RUL trajectory visualization
-- Per-dataset model management
 
 ---
 
@@ -166,14 +147,13 @@ NASATurbojet-BigDataAnalysis-using-HDFS-and-Hive/
 ### **Prerequisites**
 - **Python 3.9+**
 - **Docker Desktop** (for Hadoop/Hive containers)
-- **MongoDB** (local or Docker)
 - **8GB RAM** (recommended)
 
 ### **Installation**
 
 #### 1. Clone Repository
 ```bash
-git clone <repository-url>
+git clone https://github.com/YOUR_USERNAME/NASATurbojet-BigDataAnalysis-using-HDFS-and-Hive.git
 cd NASATurbojet-BigDataAnalysis-using-HDFS-and-Hive
 ```
 
@@ -182,16 +162,7 @@ cd NASATurbojet-BigDataAnalysis-using-HDFS-and-Hive
 pip install -r requirements.txt
 ```
 
-#### 3. Start MongoDB
-```bash
-# Option A: Local MongoDB
-mongod
-
-# Option B: Docker
-docker run -d -p 27017:27017 --name mongodb mongo:latest
-```
-
-#### 4. Start Hadoop/Hive Containers
+#### 3. Start Docker Containers
 ```bash
 docker-compose up -d
 ```
@@ -201,16 +172,9 @@ Verify containers are running:
 docker ps
 ```
 
-You should see: `namenode`, `datanode`, `hive-server`
+You should see: `namenode`, `datanode`, `hive-server`, `mongodb`
 
-#### 5. Configure Backend
-Edit `backend/config.py` if needed:
-- `MONGO_URI`: MongoDB connection string
-- `USE_DOCKER`: Set to `True` if using Docker for Hadoop
-- `NAMENODE_CONTAINER`: Name of HDFS namenode container
-
-### **Running the Application**
-
+#### 4. Run the Application
 ```bash
 streamlit run app.py
 ```
@@ -262,14 +226,14 @@ The app will open in your browser at `http://localhost:8501`
 
 ### **Step 4: Run Analytics**
 - Execute any of the **20 pre-built HiveQL queries**
-- Run **MapReduce jobs** for distributed processing
+- Run **MapReduce jobs on YARN** for distributed processing
 - Check results and performance metrics
 
 ### **Step 5: Train ML Model**
 1. Navigate to **RUL Prediction** tab
 2. Select dataset (e.g., FD001)
 3. Click **Start Training**
-4. Wait for training completion (~2-5 minutes)
+4. Wait for training completion
 
 ### **Step 6: Make Predictions**
 1. In **RUL Prediction** → **Prediction** tab
@@ -279,177 +243,40 @@ The app will open in your browser at `http://localhost:8501`
 
 ---
 
-## 🔬 Technical Highlights
-
-### **MongoDB Optimization (15 marks)**
-- **Compound Indexes**: `(dataset_id, unit_number, time_cycles)`
-- **Batch Insertion**: 1000 records/batch for performance
-- **8+ Aggregation Pipelines**:
-  - Sensor statistics
-  - Health scoring
-  - Degradation trends
-  - Condition-based metrics
-  - Failure prediction features
-
-### **Hadoop/HDFS/MapReduce (10 marks)**
-- **Complete HDFS Operations**: upload, download, delete, list, metadata
-- **6 MapReduce Jobs**: Demonstrating distributed processing
-- **Docker Integration**: Seamless container execution
-- **Validation**: File integrity checks post-upload
-
-### **HiveQL Demonstrations**
-- **20 Analytical Queries** covering:
-  - Filtering & grouping
-  - Statistical aggregations
-  - Window functions
-  - Joins
-  - Anomaly detection
-  - Feature engineering
-  - Performance reporting
-
-### **UI/UX Excellence**
-- **Premium Dark Theme**: Gradient effects, hover animations
-- **Responsive Design**: Adapts to screen sizes
-- **Real-time Status**: Live MongoDB/HDFS connection monitoring
-- **Error Handling**: Comprehensive validation and user-friendly messages
-- **Progress Tracking**: Visual feedback for long-running operations
-
----
-
-## 📘 API Documentation
-
-### **MongoDB Manager**
-```python
-from backend.mongo_manager import MongoManager
-
-mm = MongoManager()
-
-# CRUD Operations
-mm.ingest_data(dataframe)  # Create
-mm.get_dataset("FD001", "train")  # Read
-mm.update_sensor_data("FD001", unit=1, cycle=50, updates={...})  # Update
-mm.delete_dataset("FD001", "train")  # Delete
-
-# Analytics
-mm.get_summary()
-mm.get_sensor_statistics("FD001", "train")
-mm.get_unit_health_scores("FD001")
-mm.get_degradation_trends("FD001")
-mm.get_condition_based_metrics("FD002")
-```
-
-### **HDFS Manager**
-```python
-from backend.hdfs_manager import HDFSManager
-
-hdfs = HDFSManager()
-
-# File Operations
-hdfs.upload_file("local_file.csv", "/bda_project/uploads/file.csv")
-hdfs.download_file("/hdfs/path/file.csv", "local_dest.csv")
-hdfs.delete_file("/hdfs/path/file.csv")
-hdfs.list_files("/bda_project/processed")
-
-# Directory Management
-hdfs.create_directory("/new/path")
-hdfs.get_directory_size("/bda_project")
-hdfs.get_storage_summary()
-```
-
-### **Hive Manager**
-```python
-from backend.hive_manager import HiveManager
-
-hive = HiveManager()
-
-# Table Management
-hive.create_cmapss_tables()
-
-# Query Execution
-success, result = hive.run_query("SELECT * FROM cmapss_train LIMIT 10")
-
-# Pre-built Queries
-queries = hive.get_prebuilt_queries()
-success, result, metadata = hive.execute_prebuilt_query("Q1_filter_by_dataset")
-```
-
----
-
-## 🎓 Academic Criteria Fulfillment
-
-### ✅ **MongoDB Big Data Storage (15 marks)**
-- Efficient multivariate time series schema
-- Compound indexes for optimized querying
-- Batch ingestion pipeline (1000 records/batch)
-- Full CRUD operations
-- 8+ advanced aggregation pipelines
-- Analytics endpoints (health scores, degradation, conditions)
-
-### ✅ **Hadoop + HDFS + MapReduce (10 marks)**
-- Complete HDFS file operations (add, retrieve, delete, list, metadata)
-- Directory management (create, size calculation, recursive listing)
-- 6 MapReduce jobs demonstrating distributed processing
-- UI integration for job execution
-- Support for multiple execution modes (inline, local, hadoop)
-
-### ✅ **HiveQL Queries (15-20)**
-- 20 comprehensive analytical queries
-- Categories: filtering, aggregation, window functions, joins, anomaly detection, feature engineering
-- Demonstrations of partitioning concepts
-- UI interface for query execution
-- Results display in formatted tables
-
-### ✅ **Dataset Support (FD001-FD004)**
-- Proper handling of all 4 datasets
-- Metadata display (conditions, fault modes, engine counts)
-- Dataset-specific processing
-- Comparative analytics across datasets
-
-### ✅ **Streamlit UI**
-- 8 professional tabs with clear organization
-- Visual excellence with premium design
-- Robust error handling
-- Real-time status monitoring
-- Interactive visualizations
-
----
-
 ## 🛠️ Troubleshooting
+
+### **Docker Containers Not Starting**
+```bash
+# Check Docker is running
+docker info
+
+# Restart all containers
+docker-compose down
+docker-compose up -d
+```
 
 ### **MongoDB Connection Issues**
 ```bash
-# Check if MongoDB is running
-docker ps  # or
-ps aux | grep mongod
+# Check MongoDB container
+docker ps | grep mongodb
 
-# Restart MongoDB
-docker restart mongodb  # or
-sudo systemctl restart mongod
+# View MongoDB logs
+docker logs mongodb
 ```
 
 ### **HDFS Not Accessible**
 ```bash
-# Check containers
+# Check namenode container
 docker ps | grep namenode
 
-# Restart Hadoop containers
-docker-compose restart
-
-# Check logs
+# View namenode logs
 docker logs namenode
 ```
 
-### **Hive Query Failures**
-- Ensure Hive tables are initialized first
-- Check that data exists in HDFS
-- Verify `hive-server` container is running
-- Review Hive logs: `docker logs hive-server`
-
-### **Model Training Errors**
-- Ensure data ingestion is complete
-- Check MongoDB has training data
-- Verify sufficient disk space for model files
-- Review logs in terminal
+### **MapReduce Jobs Failing**
+- Ensure HDFS has data uploaded first
+- Check YARN is running: `docker exec namenode yarn node -list`
+- View job logs in the UI
 
 ---
 
@@ -462,14 +289,54 @@ docker logs namenode
 
 ---
 
-## 👨‍💻 Development
+## 📖 Documentation
 
-### **Project Contributors**
-- Enhanced by AI Coding Agent for academic excellence
-- Original dataset: NASA Ames Research Center
+- **[SETUP_GUIDE.md](SETUP_GUIDE.md)** - Detailed setup instructions
+- **[architecture.md](architecture.md)** - System architecture details
+- **[HIVEQL_QUERIES.md](HIVEQL_QUERIES.md)** - HiveQL query documentation
 
-### **License**
-MIT License - See LICENSE file for details
+---
+
+## 🎓 Academic Criteria Fulfillment
+
+### ✅ **MongoDB Big Data Storage**
+- Efficient multivariate time series schema
+- Compound indexes for optimized querying
+- Batch ingestion pipeline (1000 records/batch)
+- Full CRUD operations
+- 8+ advanced aggregation pipelines
+
+### ✅ **Hadoop + HDFS + MapReduce**
+- Complete HDFS file operations
+- Directory management
+- MapReduce jobs on YARN cluster
+- Docker-based infrastructure
+
+### ✅ **HiveQL Queries**
+- 20 comprehensive analytical queries
+- Statistical aggregations and window functions
+- UI interface for query execution
+
+### ✅ **Streamlit UI**
+- 8 professional tabs with clear organization
+- Premium dark theme with animations
+- Real-time status monitoring
+
+---
+
+## 👨‍💻 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
 
@@ -478,12 +345,4 @@ MIT License - See LICENSE file for details
 - **NASA** for providing the C-MAPSS dataset
 - **Apache Software Foundation** for Hadoop and Hive
 - **MongoDB Inc.** for MongoDB
-- **Streamlit** for the amazing Python web framework
-
----
-
-**For detailed setup instructions, see [SETUP_GUIDE.md](SETUP_GUIDE.md)**
-
-**For system architecture details, see [architecture.md](architecture.md)**
-
-**For HiveQL query documentation, see [HIVEQL_QUERIES.md](HIVEQL_QUERIES.md)**
+- **Streamlit** for the Python web framework
