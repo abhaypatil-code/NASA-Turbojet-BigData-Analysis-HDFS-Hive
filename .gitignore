@@ -45,6 +45,7 @@ streamlit_log.txt
 
 # Project Specific - Data Files
 data/
+data/mongo/
 models/*.pkl
 *.csv
 !requirements.txt
